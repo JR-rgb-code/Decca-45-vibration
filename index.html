@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Deca 45">
+<title>Hiller Deca 45 – Vibrationsmessung</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --bg:      #0d1117; --surface: #161b22; --border: #30363d;
+    --green:   #2ea043; --green-l: #3fb950;
+    --orange:  #d18a1a; --orange-l:#f0a32b;
+    --red:     #b91c1c; --red-l:   #ef4444;
+    --text:    #e6edf3; --muted:   #7d8590; --accent: #1f6feb;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  body {
+    background:var(--bg); color:var(--text);
+    font-family:'IBM Plex Sans',sans-serif;
+    min-height:100svh; display:flex; flex-direction:column; align-items:center;
+    padding:0 0 48px; overflow-x:hidden;
+  }
+
+  header {
+    width:100%; background:var(--surface); border-bottom:1px solid var(--border);
+    padding:max(env(safe-area-inset-top),14px) 20px 12px;
+    display:flex; align-items:center; gap:12px;
+  }
+  .logo-mark {
+    width:36px; height:36px; border:2px solid var(--accent); border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Bebas Neue',sans-serif; font-size:18px; color:var(--accent); flex-shrink:0;
+  }
+  .header-text h1 { font-family:'Bebas Neue',sans-serif; font-size:20px; letter-spacing:1.5px; line-height:1; }
+  .header-text p  { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace; margin-top:2px; }
+  .sensor-dot {
+    margin-left:auto; width:10px; height:10px; border-radius:50%;
+    background:var(--muted); flex-shrink:0; transition:background .3s;
+  }
+  .sensor-dot.active { background:var(--green-l); box-shadow:0 0 6px var(--green); animation:dot-pulse 1.2s ease-in-out infinite; }
+  .sensor-dot.error  { background:var(--red-l); }
+  @keyframes dot-pulse { 50%{opacity:.4;} }
+
+  main { width:100%; max-width:420px; padding:18px 16px 0; display:flex; flex-direction:column; gap:14px; }
+
+  /* Permission */
+  .perm-banner {
+    background:rgba(31,111,235,.12); border:1px solid var(--accent);
+    border-radius:10px; padding:14px 16px; display:flex; flex-direction:column; gap:10px;
+  }
+  .perm-banner p { font-size:13px; line-height:1.5; }
+  .perm-banner p span { color:var(--muted); font-size:11px; }
+  .btn-perm {
+    padding:12px; border-radius:8px; border:none; background:var(--accent); color:white;
+    font-family:'Bebas Neue',sans-serif; font-size:17px; letter-spacing:1.5px; cursor:pointer;
+  }
+
+  /* Status card */
+  .status-card {
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:20px; text-align:center; position:relative; overflow:hidden; transition:border-color .3s;
+  }
+  .status-card::before { content:''; position:absolute; inset:0; opacity:.06; transition:background .3s; pointer-events:none; }
+  .status-card.gut   { border-color:var(--green); }  .status-card.gut::before   { background:var(--green); }
+  .status-card.warn  { border-color:var(--orange); } .status-card.warn::before  { background:var(--orange); }
+  .status-card.alarm { border-color:var(--red); }
+  .status-card.alarm::before { background:var(--red); animation:pulse-bg .8s ease-in-out infinite alternate; }
+  @keyframes pulse-bg { to{opacity:.16;} }
+
+  .veff-label { font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
+  .veff-value { font-family:'Bebas Neue',sans-serif; font-size:80px; line-height:1; transition:color .3s; }
+  .veff-unit  { font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); margin-top:2px; }
+  .status-badge { display:inline-block; margin-top:12px; padding:5px 16px; border-radius:20px; font-size:13px; font-weight:600; letter-spacing:.4px; }
+  .gut  .veff-value   { color:var(--green-l); }  .gut  .status-badge { background:rgba(46,160,67,.15); color:var(--green-l); }
+  .warn .veff-value   { color:var(--orange-l); } .warn .status-badge { background:rgba(209,138,26,.15); color:var(--orange-l); }
+  .alarm .veff-value  { color:var(--red-l); }    .alarm .status-badge{ background:rgba(185,28,28,.15); color:var(--red-l); animation:blink .5s step-end infinite; }
+  @keyframes blink { 50%{opacity:.25;} }
+
+  /* Live chart */
+  .chart-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+  .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .chart-title { font-size:11px; font-family:'IBM Plex Mono',monospace; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; }
+  .chart-dur   { font-size:11px; font-family:'IBM Plex Mono',monospace; color:var(--muted); }
+  canvas#liveChart { width:100%; height:80px; display:block; border-radius:4px; }
+
+  /* Gauge */
+  .gauge-wrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; }
+  .gauge-title { font-size:11px; font-family:'IBM Plex Mono',monospace; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; margin-bottom:10px; }
+  .gauge-track {
+    position:relative; height:22px; border-radius:4px;
+    background:linear-gradient(to right,
+      var(--green) 0%,var(--green) 60.4%,
+      var(--orange) 60.4%,var(--orange) 68.8%,
+      var(--red) 68.8%,var(--red) 100%);
+    opacity:.3;
+  }
+  .gauge-needle {
+    position:absolute; top:-5px; width:3px; height:32px;
+    background:white; border-radius:2px; transform:translateX(-50%);
+    transition:left .15s ease; box-shadow:0 0 8px rgba(255,255,255,.7);
+  }
+  .gauge-labels { display:flex; justify-content:space-between; margin-top:5px; }
+  .gauge-labels span { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); }
+  .gauge-zones { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+  .zone-item { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
+  .zone-dot  { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+
+  /* Grenzwerte */
+  .limits-grid {
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:12px 16px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px;
+  }
+  .limit-item { text-align:center; }
+  .lval { font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; }
+  .llabel { font-size:10px; color:var(--muted); margin-top:2px; line-height:1.3; }
+  .lval.g{color:var(--green-l);} .lval.o{color:var(--orange-l);} .lval.r{color:var(--red-l);}
+
+  /* Steuerung */
+  .controls { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+  .controls-row { display:flex; gap:10px; }
+  .btn-big {
+    flex:1; padding:15px 8px; border-radius:10px; border:none;
+    font-family:'Bebas Neue',sans-serif; font-size:18px; letter-spacing:1.5px;
+    cursor:pointer; transition:opacity .2s,transform .1s; position:relative; overflow:hidden;
+  }
+  .btn-big:active { transform:scale(.96); opacity:.8; }
+  .btn-start { background:var(--green); color:white; }
+  .btn-stop  { background:var(--red);   color:white; }
+  .btn-snap  { background:var(--accent);color:white; flex:0 0 auto; padding:15px 18px; font-size:15px; }
+  .btn-big:disabled { opacity:.3; pointer-events:none; }
+  .measure-info { font-size:11px; font-family:'IBM Plex Mono',monospace; color:var(--muted); text-align:center; }
+
+  /* Messdauer */
+  .duration-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .duration-label { font-size:11px; font-family:'IBM Plex Mono',monospace; color:var(--muted); white-space:nowrap; }
+  .dur-btns { display:flex; gap:6px; }
+  .dur-btn {
+    padding:5px 11px; border-radius:6px; border:1px solid var(--border);
+    background:var(--bg); color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer;
+  }
+  .dur-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(31,111,235,.1); }
+
+  /* Debug-Info */
+  .debug-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+  .debug-title { font-size:11px; font-family:'IBM Plex Mono',monospace; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px; }
+  .debug-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
+  .debug-item { text-align:center; }
+  .debug-val   { font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:var(--text); }
+  .debug-label { font-size:10px; color:var(--muted); margin-top:2px; }
+
+  /* Verlauf */
+  .history-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+  .history-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .history-title { font-size:11px; font-family:'IBM Plex Mono',monospace; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; }
+  .btn-clear { font-size:11px; color:var(--muted); background:none; border:none; cursor:pointer; font-family:'IBM Plex Mono',monospace; }
+  .history-list { display:flex; flex-direction:column; gap:5px; max-height:200px; overflow-y:auto; }
+  .history-row { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; background:var(--bg); }
+  .hist-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .hist-dot.gut{background:var(--green-l);} .hist-dot.warn{background:var(--orange-l);} .hist-dot.alarm{background:var(--red-l);}
+  .hist-val { font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; min-width:64px; }
+  .hist-val.gut{color:var(--green-l);} .hist-val.warn{color:var(--orange-l);} .hist-val.alarm{color:var(--red-l);}
+  .hist-label { font-size:11px; color:var(--muted); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hist-time  { font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace; }
+  .hist-empty { font-size:12px; color:var(--muted); text-align:center; padding:10px 0; font-family:'IBM Plex Mono',monospace; }
+
+  footer { width:100%; text-align:center; padding:18px 16px 0; font-size:10px; color:var(--muted); font-family:'IBM Plex Mono',monospace; line-height:1.7; }
+
+  .toast {
+    position:fixed; bottom:32px; left:50%;
+    transform:translateX(-50%) translateY(20px);
+    background:var(--surface); border:1px solid var(--border); color:var(--text);
+    font-size:13px; font-family:'IBM Plex Mono',monospace;
+    padding:10px 20px; border-radius:20px; opacity:0;
+    transition:opacity .3s,transform .3s; pointer-events:none; white-space:nowrap; z-index:99;
+  }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">H</div>
+  <div class="header-text">
+    <h1>HILLER DECA 45</h1>
+    <p>Trommel ∅ 450 mm · Veff Live-Messung</p>
+  </div>
+  <div class="sensor-dot" id="sensorDot"></div>
+</header>
+
+<main>
+
+  <div class="perm-banner" id="permBanner">
+    <p>Der iPhone-Beschleunigungssensor muss einmalig freigegeben werden.<br>
+    <span>iOS 13+ erfordert eine explizite Genehmigung über HTTPS.</span></p>
+    <button class="btn-perm" onclick="requestSensor()">SENSOR FREIGEBEN</button>
+  </div>
+
+  <div class="status-card gut" id="statusCard">
+    <div class="veff-label">Schwinggeschwindigkeit Veff</div>
+    <div class="veff-value" id="veffDisplay">—</div>
+    <div class="veff-unit">mm/s</div>
+    <div class="status-badge" id="statusBadge">BEREIT</div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">Live-Verlauf Veff</div>
+      <div class="chart-dur" id="chartDurLabel">— s</div>
+    </div>
+    <canvas id="liveChart"></canvas>
+  </div>
+
+  <div class="gauge-wrap">
+    <div class="gauge-title">Skalenbereich · 0 – 24 mm/s</div>
+    <div class="gauge-track">
+      <div class="gauge-needle" id="needle" style="left:0%"></div>
+    </div>
+    <div class="gauge-labels">
+      <span>0</span><span>6</span><span>12</span><span>14.5</span><span>16.5</span><span>24</span>
+    </div>
+    <div class="gauge-zones">
+      <div class="zone-item"><div class="zone-dot" style="background:var(--green)"></div><span>Gut &lt;14.5</span></div>
+      <div class="zone-item"><div class="zone-dot" style="background:var(--orange)"></div><span>SW-Abs. 14.5–16.5</span></div>
+      <div class="zone-item"><div class="zone-dot" style="background:var(--red)"></div><span>HW-Abs. &gt;16.5</span></div>
+    </div>
+  </div>
+
+  <div class="limits-grid">
+    <div class="limit-item"><div class="lval g">14.5</div><div class="llabel">mm/s<br>Gut-Grenze</div></div>
+    <div class="limit-item"><div class="lval o">16.5</div><div class="llabel">mm/s<br>SW-Abschalt.</div></div>
+    <div class="limit-item"><div class="lval r">18.0</div><div class="llabel">mm/s<br>HW-Abschalt.</div></div>
+  </div>
+
+  <!-- Debug-Rohwerte -->
+  <div class="debug-card">
+    <div class="debug-title">Sensor-Rohwerte (m/s²)</div>
+    <div class="debug-grid">
+      <div class="debug-item"><div class="debug-val" id="dbgX">—</div><div class="debug-label">Acc X</div></div>
+      <div class="debug-item"><div class="debug-val" id="dbgY">—</div><div class="debug-label">Acc Y</div></div>
+      <div class="debug-item"><div class="debug-val" id="dbgZ">—</div><div class="debug-label">Acc Z</div></div>
+      <div class="debug-item"><div class="debug-val" id="dbgVx">—</div><div class="debug-label">Vel X mm/s</div></div>
+      <div class="debug-item"><div class="debug-val" id="dbgVy">—</div><div class="debug-label">Vel Y mm/s</div></div>
+      <div class="debug-item"><div class="debug-val" id="dbgVz">—</div><div class="debug-label">Vel Z mm/s</div></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="duration-row">
+      <div class="duration-label">MESSDAUER:</div>
+      <div class="dur-btns">
+        <button class="dur-btn" data-sec="5"  onclick="setDuration(5)">5s</button>
+        <button class="dur-btn active" data-sec="10" onclick="setDuration(10)">10s</button>
+        <button class="dur-btn" data-sec="30" onclick="setDuration(30)">30s</button>
+        <button class="dur-btn" data-sec="60" onclick="setDuration(60)">60s</button>
+      </div>
+    </div>
+    <div class="controls-row">
+      <button class="btn-big btn-start" id="btnStart" onclick="startLive()" disabled>▶ START</button>
+      <button class="btn-big btn-stop"  id="btnStop"  onclick="stopLive(true)" disabled>■ STOP</button>
+      <button class="btn-big btn-snap"  id="btnSnap"  onclick="snapShot()" disabled>📌</button>
+    </div>
+    <div class="measure-info" id="measureInfo">Sensor freigeben, dann START drücken</div>
+  </div>
+
+  <div class="history-card">
+    <div class="history-header">
+      <div class="history-title">Messverlauf</div>
+      <button class="btn-clear" onclick="clearHistory()">Löschen</button>
+    </div>
+    <div class="history-list" id="historyList">
+      <div class="hist-empty" id="histEmpty">Noch keine Messungen gespeichert</div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Hiller GmbH · Deca-Typ OV · ∅ 450 mm<br>
+  Grenzwerte gem. Betriebsanleitung Kap. 7.1<br>
+  Signalpfad: HP-Filter (0.5 Hz) → Integration → HP-Filter (1 Hz) → RMS<br>
+  Diese App ersetzt keine kalibrierte Messung nach ISO 10816.
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  KONSTANTEN
+// ═══════════════════════════════════════════════════════════════
+const LIMITS    = { gut: 14.5, sw: 16.5, hw: 18.0 };
+const MAX_GAUGE = 24;
+const CHART_PTS = 120;
+
+// IIR Hochpass-Filter Koeffizienten
+// Butterworth 1. Ordnung, diskrete Bilinear-Transformation
+// fc = 0.5 Hz bei fs = 100 Hz  →  α_acc
+// fc = 1.0 Hz bei fs = 100 Hz  →  α_vel
+// α = (2π·fc/fs) / (1 + 2π·fc/fs)   [Hochpass: y[n] = α·(y[n-1] + x[n] - x[n-1])]
+// Mit fs = 100 Hz:
+//   fc=0.5 Hz: RC = 1/(2π·0.5) = 0.3183 s  →  α = RC/(RC+dt) = 0.3183/(0.3183+0.01) = 0.9697
+//   fc=1.0 Hz: RC = 1/(2π·1.0) = 0.1592 s  →  α = 0.1592/(0.1592+0.01) = 0.9409
+const HP_ACC = 0.9697;   // Hochpass auf Beschleunigung (entfernt Gravitation/DC)
+const HP_VEL = 0.9409;   // Hochpass auf Geschwindigkeit (entfernt Integrationsdrift)
+
+// RMS-Fensterlänge in Sekunden (gleitend)
+const RMS_WINDOW_S = 1.0;
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+let sensorGranted = false;
+let measuring     = false;
+let measureDuration = 10;
+let measureTimer  = null;
+
+// Filter-Zustandsvariablen (je Achse: x, y, z)
+// Hochpass-Filter: y[n] = α·(y[n-1] + x[n] - x[n-1])
+let hpAcc = { x:{y:0,x:0}, y:{y:0,x:0}, z:{y:0,x:0} };  // HP auf Acc
+let hpVel = { x:{y:0,x:0}, y:{y:0,x:0}, z:{y:0,x:0} };  // HP auf Vel
+let velRaw = { x:0, y:0, z:0 };   // Geschwindigkeit nach Integration (vor HP)
+let lastTime = null;
+let fs_est   = 100;   // geschätzte Abtastrate [Hz] – wird laufend aktualisiert
+
+// RMS-Puffer: gleitendes Fenster über v²-Beträge
+let rmsBuffer  = [];   // [{t, v2}]  –  v² = vx²+vy²+vz² in (mm/s)²
+let currentVeff = 0;
+
+// Chart
+let chartBuffer = new Array(CHART_PTS).fill(0);
+let chartTick   = 0;
+
+// Verlauf
+let history = [];
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS / CHART
+// ═══════════════════════════════════════════════════════════════
+const canvas = document.getElementById('liveChart');
+const ctx    = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const dpr  = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+}
+window.addEventListener('resize', () => { resizeCanvas(); drawChart(); });
+resizeCanvas();
+
+function drawChart() {
+  const W = canvas.getBoundingClientRect().width;
+  const H = canvas.getBoundingClientRect().height;
+  ctx.clearRect(0,0,W,H);
+
+  // Hintergrund-Zonen
+  [
+    [0, LIMITS.gut/MAX_GAUGE, 'rgba(46,160,67,.08)'],
+    [LIMITS.gut/MAX_GAUGE, LIMITS.sw/MAX_GAUGE, 'rgba(209,138,26,.10)'],
+    [LIMITS.sw/MAX_GAUGE, 1, 'rgba(185,28,28,.10)'],
+  ].forEach(([a,b,c]) => {
+    ctx.fillStyle=c;
+    ctx.fillRect(0, H - b*H, W, (b-a)*H);
+  });
+
+  // Grenzlinien
+  [[LIMITS.gut,'#2ea043'],[LIMITS.sw,'#d18a1a'],[LIMITS.hw,'#b91c1c']].forEach(([v,c])=>{
+    const y = H - (v/MAX_GAUGE)*H;
+    ctx.strokeStyle=c; ctx.lineWidth=.8; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  // Kurve
+  if (chartBuffer.some(v=>v>0)) {
+    ctx.beginPath(); ctx.strokeStyle='#58a6ff'; ctx.lineWidth=2;
+    chartBuffer.forEach((v,i)=>{
+      const x=(i/(CHART_PTS-1))*W, y=H-Math.min(v/MAX_GAUGE,1)*H;
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+    ctx.fillStyle='rgba(88,166,255,.07)'; ctx.fill();
+  }
+}
+drawChart();
+
+// ═══════════════════════════════════════════════════════════════
+//  IIR HOCHPASS-FILTER  y[n] = α·(y[n-1] + x[n] - x[n-1])
+// ═══════════════════════════════════════════════════════════════
+function hpFilter(state, alpha, xNew) {
+  const yNew = alpha * (state.y + xNew - state.x);
+  state.x = xNew;
+  state.y = yNew;
+  return yNew;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SENSOR PERMISSION
+// ═══════════════════════════════════════════════════════════════
+async function requestSensor() {
+  if (typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function') {
+    try {
+      const res = await DeviceMotionEvent.requestPermission();
+      if (res === 'granted') { onSensorGranted(); }
+      else { showToast('⚠ Zugriff verweigert'); document.getElementById('sensorDot').classList.add('error'); }
+    } catch(e) { showToast('Fehler: '+e.message); }
+  } else {
+    onSensorGranted();  // Android / älteres iOS
+  }
+}
+
+function onSensorGranted() {
+  sensorGranted = true;
+  document.getElementById('permBanner').style.display = 'none';
+  document.getElementById('sensorDot').classList.add('active');
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('measureInfo').textContent = 'Sensor aktiv – START drücken';
+  showToast('✓ Sensor freigegeben');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DEVICEMOTION HANDLER  – der eigentliche Signalpfad
+// ═══════════════════════════════════════════════════════════════
+function handleMotion(e) {
+  if (!measuring) return;
+
+  const now = e.timeStamp || performance.now();
+
+  // Beschleunigung inkl. Gravitation [m/s²]
+  const acc = e.accelerationIncludingGravity;
+  if (!acc) return;
+  const ax = acc.x || 0;
+  const ay = acc.y || 0;
+  const az = acc.z || 0;
+
+  // Debug-Anzeige (gedrosselt auf ~10 Hz)
+  if (chartTick % 10 === 0) {
+    document.getElementById('dbgX').textContent = ax.toFixed(2);
+    document.getElementById('dbgY').textContent = ay.toFixed(2);
+    document.getElementById('dbgZ').textContent = az.toFixed(2);
+  }
+
+  if (lastTime === null) { lastTime = now; return; }
+
+  const dt = (now - lastTime) / 1000.0;   // [s]
+  lastTime = now;
+
+  // Abtastrate schätzen (gleitender Mittelwert)
+  if (dt > 0 && dt < 0.5) { fs_est = fs_est * 0.95 + (1/dt) * 0.05; }
+  else { return; }  // Ausreißer verwerfen
+
+  // ── SCHRITT 1: Hochpass auf Beschleunigung ──────────────────
+  // Entfernt DC-Anteil (Gravitation 9.81 m/s²) und sehr langsame Drift
+  // Ergebnis: nur dynamische Schwingungsanteile [m/s²]
+  const alpha_acc = computeAlpha(0.5, dt);   // fc=0.5 Hz, adaptiv
+  const axHP = hpFilter(hpAcc.x, alpha_acc, ax);
+  const ayHP = hpFilter(hpAcc.y, alpha_acc, ay);
+  const azHP = hpFilter(hpAcc.z, alpha_acc, az);
+
+  // ── SCHRITT 2: Trapez-Integration → Geschwindigkeit ────────
+  // Einheit: m/s → umrechnen in mm/s (*1000)
+  velRaw.x += axHP * dt * 1000.0;   // [mm/s]
+  velRaw.y += ayHP * dt * 1000.0;
+  velRaw.z += azHP * dt * 1000.0;
+
+  // ── SCHRITT 3: Hochpass auf Geschwindigkeit ─────────────────
+  // Entfernt Integrationsdrift (langsamer Offset, der sich aufaddiert)
+  // fc=1.0 Hz – alles unter 1 Hz wird als Drift betrachtet
+  const alpha_vel = computeAlpha(1.0, dt);
+  const vxHP = hpFilter(hpVel.x, alpha_vel, velRaw.x);
+  const vyHP = hpFilter(hpVel.y, alpha_vel, velRaw.y);
+  const vzHP = hpFilter(hpVel.z, alpha_vel, velRaw.z);
+
+  // Rohe Geschwindigkeit nach Filter korrigieren (verhindert Divergenz)
+  velRaw.x = vxHP;
+  velRaw.y = vyHP;
+  velRaw.z = vzHP;
+
+  if (chartTick % 10 === 0) {
+    document.getElementById('dbgVx').textContent = vxHP.toFixed(1);
+    document.getElementById('dbgVy').textContent = vyHP.toFixed(1);
+    document.getElementById('dbgVz').textContent = vzHP.toFixed(1);
+  }
+
+  // ── SCHRITT 4: Betrag der Geschwindigkeit ───────────────────
+  // |v| = sqrt(vx² + vy² + vz²)  [mm/s]
+  const vMag2 = vxHP*vxHP + vyHP*vyHP + vzHP*vzHP;  // v² für RMS
+
+  // ── SCHRITT 5: Gleitendes RMS-Fenster ──────────────────────
+  // Veff = sqrt( (1/T) · ∫v²·dt )  ≈ sqrt( mean(v²) ) über Fenster
+  rmsBuffer.push({ t: now, v2: vMag2 });
+  const cutoff = now - RMS_WINDOW_S * 1000;
+  while (rmsBuffer.length > 1 && rmsBuffer[0].t < cutoff) rmsBuffer.shift();
+
+  if (rmsBuffer.length >= 5) {
+    const meanV2 = rmsBuffer.reduce((s,p) => s + p.v2, 0) / rmsBuffer.length;
+    currentVeff  = Math.sqrt(meanV2);
+    updateDisplay(currentVeff);
+  }
+
+  // ── Chart-Update (~10 Hz) ───────────────────────────────────
+  chartTick++;
+  if (chartTick % Math.max(1, Math.round(fs_est / 10)) === 0) {
+    chartBuffer.push(currentVeff);
+    if (chartBuffer.length > CHART_PTS) chartBuffer.shift();
+    drawChart();
+  }
+}
+
+// Adaptiver Hochpass-Koeffizient α für beliebiges dt
+// α = RC / (RC + dt),   RC = 1/(2π·fc)
+function computeAlpha(fc, dt) {
+  const RC = 1.0 / (2.0 * Math.PI * fc);
+  return RC / (RC + dt);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  START / STOP
+// ═══════════════════════════════════════════════════════════════
+function startLive() {
+  if (!sensorGranted) { showToast('Bitte zuerst Sensor freigeben'); return; }
+  measuring   = true;
+  lastTime    = null;
+  velRaw      = {x:0, y:0, z:0};
+  hpAcc       = { x:{y:0,x:0}, y:{y:0,x:0}, z:{y:0,x:0} };
+  hpVel       = { x:{y:0,x:0}, y:{y:0,x:0}, z:{y:0,x:0} };
+  rmsBuffer   = [];
+  chartBuffer = new Array(CHART_PTS).fill(0);
+  chartTick   = 0;
+  currentVeff = 0;
+
+  window.addEventListener('devicemotion', handleMotion);
+
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled  = false;
+  document.getElementById('btnSnap').disabled  = false;
+
+  let remaining = measureDuration;
+  document.getElementById('measureInfo').textContent = `Messung läuft … ${remaining}s`;
+  document.getElementById('chartDurLabel').textContent = '0 s';
+
+  measureTimer = setInterval(() => {
+    remaining--;
+    document.getElementById('chartDurLabel').textContent = `${measureDuration - remaining} s`;
+    if (remaining > 0) {
+      document.getElementById('measureInfo').textContent = `Messung läuft … ${remaining}s`;
+    } else {
+      stopLive(true);
+    }
+  }, 1000);
+}
+
+function stopLive(autoSave) {
+  measuring = false;
+  clearInterval(measureTimer);
+  window.removeEventListener('devicemotion', handleMotion);
+  lastTime = null;
+
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+  document.getElementById('btnSnap').disabled  = true;
+  document.getElementById('measureInfo').textContent =
+    `Letzte Messung: ${currentVeff.toFixed(1)} mm/s · ${measureDuration}s`;
+
+  if (autoSave && rmsBuffer.length > 5) {
+    addHistory(currentVeff, `${measureDuration}s Auto`);
+    showToast(`✓ Gespeichert: ${currentVeff.toFixed(1)} mm/s`);
+  }
+}
+
+function snapShot() {
+  if (currentVeff > 0) {
+    addHistory(currentVeff, 'Snapshot');
+    showToast(`📌 ${currentVeff.toFixed(1)} mm/s gespeichert`);
+  }
+}
+
+function setDuration(sec) {
+  measureDuration = sec;
+  document.querySelectorAll('.dur-btn').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.sec) === sec));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ANZEIGE
+// ═══════════════════════════════════════════════════════════════
+function classify(v) {
+  if (v < LIMITS.gut) return 'gut';
+  if (v < LIMITS.sw)  return 'warn';
+  return 'alarm';
+}
+
+function updateDisplay(v) {
+  const cls = classify(v);
+  document.getElementById('veffDisplay').textContent = v.toFixed(1);
+  document.getElementById('statusCard').className    = 'status-card ' + cls;
+  document.getElementById('needle').style.left       = Math.min(v/MAX_GAUGE*100,100)+'%';
+  const b = document.getElementById('statusBadge');
+  if      (cls==='gut')   b.textContent = '● GUT';
+  else if (cls==='warn')  b.textContent = '⚠ SOFTWARE-ABSCHALTUNG';
+  else                    b.textContent = '🔴 HARDWARE-ABSCHALTUNG';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  VERLAUF
+// ═══════════════════════════════════════════════════════════════
+function addHistory(v, label) {
+  const cls  = classify(v);
+  const time = new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  history.unshift({v, cls, time, label});
+  if (history.length > 30) history.pop();
+  renderHistory();
+}
+function renderHistory() {
+  const list  = document.getElementById('historyList');
+  const empty = document.getElementById('histEmpty');
+  if (!history.length) { empty.style.display=''; return; }
+  empty.style.display = 'none';
+  list.innerHTML = '';
+  history.forEach(h => {
+    const row = document.createElement('div');
+    row.className = 'history-row';
+    row.innerHTML = `
+      <div class="hist-dot ${h.cls}"></div>
+      <div class="hist-val ${h.cls}">${h.v.toFixed(1)} mm/s</div>
+      <div class="hist-label">${h.label||''}</div>
+      <div class="hist-time">${h.time}</div>`;
+    list.appendChild(row);
+  });
+}
+function clearHistory() {
+  history = [];
+  const list = document.getElementById('historyList');
+  list.innerHTML = '';
+  const e = document.getElementById('histEmpty');
+  e.style.display = '';
+  list.appendChild(e);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════════
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+(function init() {
+  if (typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission !== 'function') {
+    onSensorGranted();  // Android / älteres iOS ohne Dialog
+  }
+  updateDisplay(0);
+  document.getElementById('veffDisplay').textContent = '—';
+  document.getElementById('statusBadge').textContent = 'BEREIT';
+})();
+</script>
+</body>
+</html>
