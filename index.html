@@ -228,7 +228,7 @@ footer{width:100%;text-align:center;padding:12px 16px 6px;font-size:9px;color:va
     <div class="veff-main">
       <div class="veff-label">Veff</div>
       <div class="veff-value" id="veffDisplay">—</div>
-      <div class="veff-unit">mm/s</div>
+      <div class="veff-unit" id="veffUnit">mm/s</div>
     </div>
     <div class="status-right">
       <div class="status-badge" id="statusBadge">BEREIT</div>
@@ -311,7 +311,7 @@ footer{width:100%;text-align:center;padding:12px 16px 6px;font-size:9px;color:va
 
 <footer>
   Hiller GmbH · Deca-Typ OV · ∅ 450 mm · Kap. 7.1<br>
-  HP 2 Hz → a_rms / (2π·f) → Veff · Keine Integration · Kein Ersatz für ISO 10816
+  Phase 1: a_rms [mm/s²] + FFT-Puffer · Phase 2: f per FFT → Veff = a_rms/(2π·f) · Kein Ersatz für ISO 10816
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -409,14 +409,19 @@ function onSensorGranted(){
 }
 
 // ── Signalpfad ───────────────────────────────────────────────
-// Neuer Ansatz: KEINE Integration mehr.
-// Veff wird direkt aus der gefilterten Beschleunigung berechnet:
-//   Veff = a_rms / (2π · f)
-// f wird laufend per Nulldurchgangs-Zählung geschätzt.
-// Vorteil: kein Integrationsdrift, stabil auch bei langer Messung.
+// ZWEISTUFIG:
+// Phase 1 (während Messung): a_rms in mm/s² akkumulieren
+//   + Rohsignal für FFT puffern (max. 4096 Samples)
+// Phase 2 (nach Messung): FFT → dominante Frequenz f →
+//   Veff = a_rms / (2π·f)  [mm/s]
+// Kein Integrationsdrift möglich.
 
-let zeroCrossCount=0, zeroCrossTime=0, freqEst=25.0; // Hz Startwert
-let lastAccSign=0;  // Vorzeichen des letzten gefilterten Acc-Betrags
+const FFT_SIZE=4096;      // Muss Potenz von 2 sein
+let rawSignal=[];         // Rohsignal [m/s²] für FFT, max FFT_SIZE Samples
+let aRmsAcc=0;            // Σ a² akkumuliert
+let aRmsCount=0;
+let finalFreq=null;       // Hz nach FFT
+let finalArms=null;       // mm/s² nach Messung
 
 function handleMotion(e){
   if(!measuring) return;
@@ -425,53 +430,29 @@ function handleMotion(e){
   if(!acc) return;
   const ax=acc.x||0,ay=acc.y||0,az=acc.z||0;
 
-  if(chartTick%10===0){
-    document.getElementById('dbgX').textContent=ax.toFixed(2);
-    document.getElementById('dbgY').textContent=ay.toFixed(2);
-    document.getElementById('dbgZ').textContent=az.toFixed(2);
-    document.getElementById('dbgVx').textContent=freqEst.toFixed(1)+' Hz';
-    document.getElementById('dbgVy').textContent=v2Count>0?(Math.sqrt(v2Sum/v2Count)*1000).toFixed(1):'—';
-    document.getElementById('dbgVz').textContent=String(v2Count);
-  }
-
-  if(lastTime===null){lastTime=now;measureStartTime=now;lastLogTime=now;zeroCrossTime=now;return;}
+  if(lastTime===null){lastTime=now;measureStartTime=now;lastLogTime=now;return;}
   const dt=(now-lastTime)/1000.0;lastTime=now;
   if(dt<=0||dt>0.5) return;
   fs_est=fs_est*0.95+(1/dt)*0.05;
 
-  // ── Schritt 1: Hochpass auf Beschleunigung (fc=2 Hz) ────────
-  // Entfernt DC-Offset und sehr langsame Bewegungen
+  // HP-Filter auf Beschleunigung (fc=2 Hz) – entfernt DC/Gravitation
   const axHP=hpFilter(hpAcc.x,FC_ACC,dt,ax);
   const ayHP=hpFilter(hpAcc.y,FC_ACC,dt,ay);
   const azHP=hpFilter(hpAcc.z,FC_ACC,dt,az);
 
-  // ── Schritt 2: Betrag der Beschleunigung [m/s²] ─────────────
+  // Betrag [m/s²]
   const aMag=Math.sqrt(axHP*axHP+ayHP*ayHP+azHP*azHP);
 
-  // ── Schritt 3: Frequenzschätzung per Nulldurchgang ──────────
-  // Nulldurchgang des Betrags (Flanke von klein nach groß und zurück)
-  const sign=axHP>=0?1:-1;  // Vorzeichen der dominanten Achse (X)
-  if(lastAccSign!==0&&sign!==lastAccSign){
-    zeroCrossCount++;
-    // Alle 10 Nulldurchgänge Frequenz neu schätzen
-    if(zeroCrossCount>=10){
-      const elapsed_zc=(now-zeroCrossTime)/1000.0;
-      if(elapsed_zc>0.1){
-        // 10 Nulldurchgänge = 5 vollständige Perioden
-        const fNew=(zeroCrossCount/2)/elapsed_zc;
-        // Plausibilitätsprüfung: 1–200 Hz
-        if(fNew>=1&&fNew<=200){
-          freqEst=freqEst*0.7+fNew*0.3;  // Glättung
-        }
-        zeroCrossCount=0; zeroCrossTime=now;
-      }
-    }
+  // Debug
+  if(chartTick%10===0){
+    document.getElementById('dbgX').textContent=ax.toFixed(2);
+    document.getElementById('dbgY').textContent=ay.toFixed(2);
+    document.getElementById('dbgZ').textContent=az.toFixed(2);
+    document.getElementById('dbgVx').textContent=(aMag*1000).toFixed(1);
+    document.getElementById('dbgVy').textContent=aRmsCount>0?(Math.sqrt(aRmsAcc/aRmsCount)*1000).toFixed(1):'—';
+    document.getElementById('dbgVz').textContent=String(aRmsCount);
   }
-  lastAccSign=sign;
 
-  // ── Schritt 4: Veff = a_rms / (2π·f) ───────────────────────
-  // a in m/s², ×1000 → mm/s²
-  // Veff [mm/s] = a_rms [mm/s²] / (2π·f [Hz])
   // Einschwingzeit 3s abwarten
   const elapsed=(now-measureStartTime)/1000.0;
   if(elapsed<3.0){
@@ -479,28 +460,118 @@ function handleMotion(e){
     return;
   }
 
-  // RMS der Beschleunigung akkumulieren [m/s²]
-  v2Sum+=aMag*aMag; v2Count++;
+  // ── Phase 1: a² akkumulieren für RMS ────────────────────────
+  aRmsAcc+=aMag*aMag;
+  aRmsCount++;
 
-  if(v2Count>=5){
-    const aRms_ms2=Math.sqrt(v2Sum/v2Count);          // m/s²
-    const aRms_mms2=aRms_ms2*1000.0;                  // mm/s²
-    const omega=2.0*Math.PI*Math.max(freqEst,1.0);     // rad/s
-    currentVeff=aRms_mms2/omega;                       // mm/s
-    updateDisplay(currentVeff);
+  // ── Rohsignal für FFT puffern (X-Achse, HP-gefiltert) ───────
+  // Nur bis FFT_SIZE Samples speichern
+  if(rawSignal.length<FFT_SIZE) rawSignal.push(axHP);
+
+  // Live-Anzeige: a_rms in mm/s² (noch kein Veff)
+  if(aRmsCount>=5){
+    const arms_mms2=Math.sqrt(aRmsAcc/aRmsCount)*1000.0;
+    document.getElementById('veffDisplay').textContent=arms_mms2.toFixed(1);
+    document.getElementById('veffUnit').textContent='mm/s²';
+    document.getElementById('durationInfo').textContent=`RMS über ${(elapsed-3).toFixed(0)}s`;
+    document.getElementById('needle').style.left='0%'; // Nadel während Messung neutral
   }
 
+  // Log für PDF-Chart (a_rms Verlauf)
   if(now-lastLogTime>=500){
-    measureLog.push({t:parseFloat(elapsed.toFixed(1)),veff:parseFloat(currentVeff.toFixed(2))});
+    const arms_live=aRmsCount>0?Math.sqrt(aRmsAcc/aRmsCount)*1000:0;
+    measureLog.push({t:parseFloat((elapsed-3).toFixed(1)),veff:parseFloat(arms_live.toFixed(2))});
     lastLogTime=now;
   }
+
   chartTick++;
   if(chartTick%Math.max(1,Math.round(fs_est/10))===0){
-    chartBuffer.push(currentVeff);
+    const arms_live=aRmsCount>0?Math.sqrt(aRmsAcc/aRmsCount)*1000:0;
+    chartBuffer.push(arms_live);
     if(chartBuffer.length>CHART_PTS) chartBuffer.shift();
-    drawChart();
-    document.getElementById('chartDurLabel').textContent=elapsed.toFixed(0)+' s';
+    // Chart während Messung in mm/s² – Skalierung temporär anpassen
+    drawChartRaw(arms_live);
+    document.getElementById('chartDurLabel').textContent=(elapsed-3).toFixed(0)+' s';
   }
+}
+
+// ── FFT (Cooley-Tukey, radix-2) ──────────────────────────────
+function computeFFT(signal){
+  const N=signal.length;
+  // Auf nächste Potenz von 2 auffüllen/kürzen
+  let n=1; while(n<N) n<<=1; n>>=1; // nächst-niedrigere Potenz
+  const re=new Float64Array(n);
+  const im=new Float64Array(n);
+  // Hanning-Fenster anwenden
+  for(let i=0;i<n;i++){
+    const w=0.5*(1-Math.cos(2*Math.PI*i/(n-1)));
+    re[i]=signal[i]*w;
+  }
+  // Bit-Reversal
+  let j=0;
+  for(let i=1;i<n;i++){
+    let bit=n>>1;
+    for(;j&bit;bit>>=1) j^=bit;
+    j^=bit;
+    if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]];}
+  }
+  // Butterfly
+  for(let len=2;len<=n;len<<=1){
+    const ang=-2*Math.PI/len;
+    const wRe=Math.cos(ang),wIm=Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let curRe=1,curIm=0;
+      for(let k=0;k<len/2;k++){
+        const uRe=re[i+k],uIm=im[i+k];
+        const vRe=re[i+k+len/2]*curRe-im[i+k+len/2]*curIm;
+        const vIm=re[i+k+len/2]*curIm+im[i+k+len/2]*curRe;
+        re[i+k]=uRe+vRe; im[i+k]=uIm+vIm;
+        re[i+k+len/2]=uRe-vRe; im[i+k+len/2]=uIm-vIm;
+        const tmp=curRe*wRe-curIm*wIm;
+        curIm=curRe*wIm+curIm*wRe; curRe=tmp;
+      }
+    }
+  }
+  // Amplitudenspektrum (nur positive Frequenzen)
+  const half=n/2;
+  const mag=new Float64Array(half);
+  for(let i=0;i<half;i++) mag[i]=Math.sqrt(re[i]*re[i]+im[i]*im[i]);
+  return {mag,n};
+}
+
+function findDominantFreq(signal, fs){
+  if(signal.length<64) return 25.0; // Fallback
+  const {mag,n}=computeFFT(signal);
+  // Suche Peak zwischen 1 Hz und 200 Hz
+  const fMin=Math.ceil(1.0*n/fs);
+  const fMax=Math.floor(200.0*n/fs);
+  let maxMag=0,maxIdx=fMin;
+  for(let i=fMin;i<=Math.min(fMax,mag.length-1);i++){
+    if(mag[i]>maxMag){maxMag=mag[i];maxIdx=i;}
+  }
+  return maxIdx*fs/n; // Hz
+}
+
+// ── Chart während Messung (a_rms in mm/s²) ──────────────────
+function drawChartRaw(currentArms){
+  const W=canvas.getBoundingClientRect().width,H=canvas.getBoundingClientRect().height;
+  ctx.clearRect(0,0,W,H);
+  // Einfacher grauer Hintergrund während Messung
+  ctx.fillStyle='rgba(88,166,255,.03)'; ctx.fillRect(0,0,W,H);
+  if(chartBuffer.some(v=>v>0)){
+    const maxVal=Math.max(...chartBuffer,10);
+    ctx.beginPath();ctx.strokeStyle='#58a6ff';ctx.lineWidth=1.8;
+    chartBuffer.forEach((v,i)=>{
+      const x=(i/(CHART_PTS-1))*W,y=H-Math.min(v/maxVal,1)*H;
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();
+    ctx.fillStyle='rgba(88,166,255,.07)';ctx.fill();
+  }
+  // Einheit anzeigen
+  ctx.fillStyle='rgba(125,133,144,.6)';ctx.font='10px monospace';
+  ctx.fillText('a_rms [mm/s²]',4,H-4);
 }
 
 // ── Start/Stop ───────────────────────────────────────────────
@@ -511,8 +582,11 @@ function startLive(){
   hpAcc={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
   hpVel={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
   zeroCrossCount=0;zeroCrossTime=0;lastAccSign=0;freqEst=25.0;
-  rmsBuffer=[];chartBuffer=new Array(CHART_PTS).fill(0);chartTick=0;
+  rawSignal=[];aRmsAcc=0;aRmsCount=0;finalFreq=null;finalArms=null;
+  chartBuffer=new Array(CHART_PTS).fill(0);chartTick=0;
   currentVeff=0;v2Sum=0;v2Count=0;measureLog=[];
+  document.getElementById('veffUnit').textContent='mm/s²';
+  document.getElementById('veffDisplay').textContent='—';
   window.addEventListener('devicemotion',handleMotion);
   document.getElementById('btnStart').disabled=true;
   document.getElementById('btnStop').disabled=false;
@@ -536,12 +610,37 @@ function stopLive(autoSave){
   document.getElementById('btnStart').disabled=false;
   document.getElementById('btnStop').disabled=true;
   document.getElementById('btnSnap').disabled=true;
-  document.getElementById('measureInfo').textContent=
-    `Veff (RMS ${measureDuration}s): ${currentVeff.toFixed(2)} mm/s`;
-  if(autoSave&&v2Count>5){
-    addHistory(currentVeff,`Veff RMS ${measureDuration}s`);
+
+  // ── Phase 2: FFT → dominante Frequenz → Veff ────────────────
+  if(aRmsCount>5&&rawSignal.length>=64){
+    finalFreq=findDominantFreq(rawSignal, fs_est);
+    finalArms=Math.sqrt(aRmsAcc/aRmsCount)*1000.0;  // mm/s²
+    const omega=2.0*Math.PI*finalFreq;
+    currentVeff=finalArms/omega;                     // mm/s
+
+    // Anzeige auf Veff umschalten
+    document.getElementById('veffDisplay').textContent=currentVeff.toFixed(2);
+    document.getElementById('veffUnit').textContent='mm/s';
+    document.getElementById('durationInfo').textContent=`f=${finalFreq.toFixed(1)} Hz · a=${finalArms.toFixed(0)} mm/s²`;
+    updateDisplay(currentVeff);
+    document.getElementById('measureInfo').textContent=
+      `Veff=${currentVeff.toFixed(2)} mm/s · f=${finalFreq.toFixed(1)} Hz · a_rms=${finalArms.toFixed(0)} mm/s²`;
+
+    // PDF-Log mit Veff-Werten neu berechnen
+    measureLog=measureLog.map(p=>({...p,
+      veff:parseFloat(((p.veff)/omega).toFixed(2))
+    }));
+    // Chart neu zeichnen mit Veff-Skala
+    chartBuffer=measureLog.map(p=>p.veff);
+    drawChart();
+  } else {
+    document.getElementById('measureInfo').textContent='Zu wenig Daten – bitte erneut messen';
+  }
+
+  if(autoSave&&currentVeff>0){
+    addHistory(currentVeff,`f=${finalFreq?finalFreq.toFixed(1):'?'} Hz · a=${finalArms?finalArms.toFixed(0):'?'} mm/s²`);
     document.getElementById('btnPdf').disabled=false;
-    showToast(`Gespeichert: ${currentVeff.toFixed(1)} mm/s`);
+    showToast(`Veff: ${currentVeff.toFixed(2)} mm/s`);
   }
 }
 function snapShot(){
