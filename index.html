@@ -232,8 +232,7 @@ footer{width:100%;text-align:center;padding:12px 16px 6px;font-size:9px;color:va
     </div>
     <div class="status-right">
       <div class="status-badge" id="statusBadge">BEREIT</div>
-      <div class="peak-line">Peak: <span class="peak-val" id="peakDisplay">—</span> mm/s</div>
-      <div class="peak-line">Ø: <span class="peak-val" id="avgDisplay">—</span> mm/s</div>
+      <div class="peak-line" id="durationInfo">— s RMS</div>
     </div>
   </div>
 
@@ -312,7 +311,7 @@ footer{width:100%;text-align:center;padding:12px 16px 6px;font-size:9px;color:va
 
 <footer>
   Hiller GmbH · Deca-Typ OV · ∅ 450 mm · Kap. 7.1<br>
-  HP 2 Hz → Integration → HP 1 Hz → RMS · Kein Ersatz für ISO 10816
+  HP 2 Hz → Integration → HP 1 Hz → RMS über gesamte Messdauer · Kein Ersatz für ISO 10816
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -327,7 +326,8 @@ let sensorGranted=false,measuring=false,measureDuration=10,measureTimer=null;
 let hpAcc={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
 let hpVel={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
 let velRaw={x:0,y:0,z:0},lastTime=null,fs_est=100;
-let rmsBuffer=[],currentVeff=0,peakVeff=0,sumVeff=0,countVeff=0;
+// Echter Veff = RMS über GESAMTE Messdauer: sqrt(1/N · Σv²)
+let v2Sum=0,v2Count=0,currentVeff=0;
 let chartBuffer=new Array(CHART_PTS).fill(0),chartTick=0;
 let history=[],measureLog=[],measureStartTime=0,lastLogTime=0;
 
@@ -439,16 +439,11 @@ function handleMotion(e){
     document.getElementById('dbgVy').textContent=vyHP.toFixed(1);
     document.getElementById('dbgVz').textContent=vzHP.toFixed(1);
   }
+  // Echter Veff = RMS über gesamte Messdauer
   const v2=vxHP*vxHP+vyHP*vyHP+vzHP*vzHP;
-  rmsBuffer.push({t:now,v2});
-  const cutoff=now-RMS_WIN_S*1000;
-  while(rmsBuffer.length>1&&rmsBuffer[0].t<cutoff) rmsBuffer.shift();
-  if(rmsBuffer.length>=5){
-    const mean=rmsBuffer.reduce((s,p)=>s+p.v2,0)/rmsBuffer.length;
-    currentVeff=Math.sqrt(mean);
-    if(currentVeff>peakVeff){peakVeff=currentVeff;document.getElementById('peakDisplay').textContent=peakVeff.toFixed(1);}
-    sumVeff+=currentVeff;countVeff++;
-    document.getElementById('avgDisplay').textContent=(sumVeff/countVeff).toFixed(1);
+  v2Sum+=v2; v2Count++;
+  if(v2Count>=5){
+    currentVeff=Math.sqrt(v2Sum/v2Count);
     updateDisplay(currentVeff);
   }
   if(now-lastLogTime>=500){
@@ -473,9 +468,7 @@ function startLive(){
   hpAcc={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
   hpVel={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
   rmsBuffer=[];chartBuffer=new Array(CHART_PTS).fill(0);chartTick=0;
-  currentVeff=0;peakVeff=0;sumVeff=0;countVeff=0;measureLog=[];
-  document.getElementById('peakDisplay').textContent='—';
-  document.getElementById('avgDisplay').textContent='—';
+  currentVeff=0;v2Sum=0;v2Count=0;measureLog=[];
   window.addEventListener('devicemotion',handleMotion);
   document.getElementById('btnStart').disabled=true;
   document.getElementById('btnStop').disabled=false;
@@ -495,9 +488,9 @@ function stopLive(autoSave){
   document.getElementById('btnStop').disabled=true;
   document.getElementById('btnSnap').disabled=true;
   document.getElementById('measureInfo').textContent=
-    `Veff ${currentVeff.toFixed(1)} | Peak ${peakVeff.toFixed(1)} | Ø ${countVeff>0?(sumVeff/countVeff).toFixed(1):'—'} mm/s`;
-  if(autoSave&&rmsBuffer.length>5){
-    addHistory(currentVeff,`${measureDuration}s | Peak ${peakVeff.toFixed(1)}`);
+    `Veff (RMS ${measureDuration}s): ${currentVeff.toFixed(2)} mm/s`;
+  if(autoSave&&v2Count>5){
+    addHistory(currentVeff,`Veff RMS ${measureDuration}s`);
     document.getElementById('btnPdf').disabled=false;
     showToast(`Gespeichert: ${currentVeff.toFixed(1)} mm/s`);
   }
@@ -518,11 +511,15 @@ function setDuration(sec){
 function classify(v){return v<LIMITS.gut?'gut':v<LIMITS.sw?'warn':'alarm';}
 function updateDisplay(v){
   const cls=classify(v);
-  document.getElementById('veffDisplay').textContent=v.toFixed(1);
+  document.getElementById('veffDisplay').textContent=v.toFixed(2);
   document.getElementById('statusCard').className='status-card '+cls;
   document.getElementById('needle').style.left=Math.min(v/MAX_GAUGE*100,100)+'%';
   const b=document.getElementById('statusBadge');
   b.textContent=cls==='gut'?'● GUT':cls==='warn'?'⚠ SW-ABSCHALTUNG':'🔴 HW-ABSCHALTUNG';
+  if(measuring&&v2Count>0){
+    const elapsed=((performance.now()-measureStartTime)/1000).toFixed(0);
+    document.getElementById('durationInfo').textContent=`RMS über ${elapsed}s`;
+  }
 }
 
 // ── Verlauf (nur für PDF) ────────────────────────────────────
@@ -532,8 +529,7 @@ function addHistory(v,label){
   history.unshift({v,cls,
     time:now.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
     date:now.toLocaleDateString('de-DE'),
-    label,peak:peakVeff,avg:countVeff>0?sumVeff/countVeff:v,
-    duration:measureDuration,log:[...measureLog]});
+    label,duration:measureDuration,log:[...measureLog]});
   if(history.length>30) history.pop();
 }
 
@@ -597,11 +593,9 @@ function exportPDF(){
   });
   y+=15;
 
-  // Tabelle
   doc.setFontSize(7);doc.setFont('helvetica','bold');st([80,80,80]);doc.text('MESSERGEBNISSE',ML,y+5);y+=8;
-  const cols=[{label:'Nr.',w:10},{label:'Datum',w:22},{label:'Uhrzeit',w:18},
-    {label:'Veff [mm/s]',w:28},{label:'Peak [mm/s]',w:28},{label:'Ø [mm/s]',w:24},
-    {label:'Dauer [s]',w:18},{label:'Bewertung',w:32}];
+  const cols=[{label:'Nr.',w:10},{label:'Datum',w:25},{label:'Uhrzeit',w:20},
+    {label:'Veff RMS [mm/s]',w:38},{label:'Dauer [s]',w:20},{label:'Bewertung',w:CW-113}];
   let cx=ML;
   sf([220,225,232]);sd(C.border);doc.setLineWidth(0.15);doc.rect(ML,y,CW,7,'FD');
   doc.setFont('helvetica','bold');doc.setFontSize(7);st([40,40,40]);
@@ -614,11 +608,10 @@ function exportPDF(){
     const bew=cls==='gut'?'GUT':cls==='warn'?'SW-ABSCHALTUNG':'HW-ABSCHALTUNG';
     doc.setFont('helvetica','normal');doc.setFontSize(7.5);st([30,30,30]);
     cx=ML;
-    [String(history.length-i),h.date||'—',h.time||'—',h.v.toFixed(1),
-      h.peak?h.peak.toFixed(1):'—',h.avg?h.avg.toFixed(1):'—',String(h.duration||'—')]
+    [String(history.length-i),h.date||'—',h.time||'—',h.v.toFixed(2),String(h.duration||'—')]
       .forEach((v,j)=>{doc.text(v,cx+1.5,y+4.8);cx+=cols[j].w;});
-    sf(bewCol);doc.setLineWidth(0);doc.roundedRect(cx+1,y+1.5,30,4,1,1,'F');
-    st(C.white);doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.text(bew,cx+16,y+4.5,{align:'center'});
+    sf(bewCol);doc.setLineWidth(0);doc.roundedRect(cx+1,y+1.5,cols[5].w-2,4,1,1,'F');
+    st(C.white);doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.text(bew,cx+cols[5].w/2,y+4.5,{align:'center'});
     y+=7;if(y>265){doc.addPage();y=20;}
   });y+=6;
 
@@ -659,7 +652,7 @@ function exportPDF(){
   if(y>270){doc.addPage();y=20;}
   sf([240,242,245]);sd(C.border);doc.setLineWidth(0.15);doc.rect(ML,y,CW,16,'FD');
   doc.setFontSize(6.5);doc.setFont('helvetica','normal');st([100,100,100]);
-  doc.text('Signalpfad: e.acceleration (ohne Gravitation) → HP-Filter 2 Hz → Trapez-Integration → HP-Filter 1 Hz → gleitendes RMS (1 s)',ML+3,y+5);
+  doc.text('Signalpfad: e.acceleration (ohne Gravitation) → HP-Filter 2 Hz → Trapez-Integration → HP-Filter 1 Hz → RMS über gesamte Messdauer',ML+3,y+5);
   doc.text('Grenzwerte: Hiller GmbH Betriebsanleitung Kap. 7.1, Trommel-Innendurchmesser 450 mm (Typen 35, 37, 45)',ML+3,y+10);
   doc.text('HINWEIS: Diese Messung ersetzt keine kalibrierte Schwingungsmessung nach ISO 10816 / VDI 2056.',ML+3,y+15);
   const pages=doc.internal.getNumberOfPages();
