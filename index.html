@@ -439,14 +439,21 @@ function handleMotion(e){
     document.getElementById('dbgVy').textContent=vyHP.toFixed(1);
     document.getElementById('dbgVz').textContent=vzHP.toFixed(1);
   }
-  // Echter Veff = RMS über gesamte Messdauer
+  // Einschwingzeit 3s abwarten, dann RMS akkumulieren
+  const elapsed=(now-measureStartTime)/1000.0;
+  if(elapsed<3.0){
+    // Filter schwingt ein – Werte verwerfen, Info anzeigen
+    document.getElementById('durationInfo').textContent=`Einschwingen… ${(3-elapsed).toFixed(0)}s`;
+    return;
+  }
+  // Echter Veff = RMS über Messdauer nach Einschwingen
   const v2=vxHP*vxHP+vyHP*vyHP+vzHP*vzHP;
   v2Sum+=v2; v2Count++;
   if(v2Count>=5){
     currentVeff=Math.sqrt(v2Sum/v2Count);
     updateDisplay(currentVeff);
   }
-  if(now-lastLogTime>=500){
+  if(elapsed>=3.0&&now-lastLogTime>=500){
     measureLog.push({t:parseFloat(((now-measureStartTime)/1000).toFixed(1)),veff:parseFloat(currentVeff.toFixed(2))});
     lastLogTime=now;
   }
@@ -473,12 +480,17 @@ function startLive(){
   document.getElementById('btnStart').disabled=true;
   document.getElementById('btnStop').disabled=false;
   document.getElementById('btnSnap').disabled=false;
-  let remaining=measureDuration;
-  document.getElementById('measureInfo').textContent=`Messung läuft … ${remaining}s`;
+  let remaining=measureDuration+3;  // +3s Einschwingzeit
   measureTimer=setInterval(()=>{
     remaining--;
-    if(remaining>0){document.getElementById('measureInfo').textContent=`Messung läuft … ${remaining}s`;}
-    else{stopLive(true);}
+    const measRemain=remaining-0;
+    if(remaining>measureDuration){
+      document.getElementById('measureInfo').textContent=`Einschwingen… ${remaining-measureDuration}s`;
+    } else if(remaining>0){
+      document.getElementById('measureInfo').textContent=`RMS-Messung läuft … ${remaining}s`;
+    } else {
+      stopLive(true);
+    }
   },1000);
 }
 function stopLive(autoSave){
