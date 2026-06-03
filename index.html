@@ -317,31 +317,45 @@ footer{width:100%;text-align:center;padding:12px 16px 6px;font-size:9px;color:va
 <div class="toast" id="toast"></div>
 
 <script>
+<script>
 // ═══════════════════════════════════════════════════════════
 const LIMITS={gut:14.5,sw:16.5,hw:18.0};
-const MAX_GAUGE=24, CHART_PTS=120, RMS_WIN_S=1.0;
-const FC_ACC=2.0, FC_VEL=1.0;
+const MAX_GAUGE=24, CHART_PTS=120;
+const FC_ACC=2.0;  // HP-Grenzfrequenz Beschleunigung [Hz]
 
-let sensorGranted=false,measuring=false,measureDuration=10,measureTimer=null;
+// ── State ────────────────────────────────────────────────────
+let sensorGranted=false, measuring=false, measureDuration=10, measureTimer=null;
 let hpAcc={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
-let hpVel={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
-let velRaw={x:0,y:0,z:0},lastTime=null,fs_est=100;
-// Echter Veff = RMS über GESAMTE Messdauer: sqrt(1/N · Σv²)
-let v2Sum=0,v2Count=0,currentVeff=0;
-let chartBuffer=new Array(CHART_PTS).fill(0),chartTick=0;
-let history=[],measureLog=[],measureStartTime=0,lastLogTime=0;
+let lastTime=null, fs_est=100;
+let measureStartTime=0, lastLogTime=0;
+
+// Phase 1: Akkumulatoren
+const FFT_SIZE=4096;
+let rawSignal=[];    // HP-gefiltertes X-Signal für FFT
+let aRmsAcc=0;       // Σ a²  [m/s²]²
+let aRmsCount=0;     // Anzahl Samples
+
+// Phase 2: Ergebnisse
+let finalFreq=null;  // [Hz]  nach FFT
+let finalArms=null;  // [mm/s²] nach Messung
+let currentVeff=0;   // [mm/s]  nach Phase 2
+
+// Chart / Log
+let chartBuffer=new Array(CHART_PTS).fill(0), chartTick=0;
+let history=[], measureLog=[];
 
 // ── Canvas ──────────────────────────────────────────────────
-const canvas=document.getElementById('liveChart'),ctx=canvas.getContext('2d');
+const canvas=document.getElementById('liveChart'), ctx=canvas.getContext('2d');
 function resizeCanvas(){
-  const dpr=window.devicePixelRatio||1,r=canvas.getBoundingClientRect();
-  canvas.width=r.width*dpr;canvas.height=r.height*dpr;ctx.scale(dpr,dpr);
+  const dpr=window.devicePixelRatio||1, r=canvas.getBoundingClientRect();
+  canvas.width=r.width*dpr; canvas.height=r.height*dpr; ctx.scale(dpr,dpr);
 }
 window.addEventListener('resize',()=>{resizeCanvas();drawChart();});
 resizeCanvas();
 
+// Chart nach Messung – Veff mit Grenzwert-Zonen
 function drawChart(){
-  const W=canvas.getBoundingClientRect().width,H=canvas.getBoundingClientRect().height;
+  const W=canvas.getBoundingClientRect().width, H=canvas.getBoundingClientRect().height;
   ctx.clearRect(0,0,W,H);
   [[0,LIMITS.gut/MAX_GAUGE,'rgba(46,160,67,.08)'],
    [LIMITS.gut/MAX_GAUGE,LIMITS.sw/MAX_GAUGE,'rgba(209,138,26,.10)'],
@@ -355,7 +369,7 @@ function drawChart(){
   if(chartBuffer.some(v=>v>0)){
     ctx.beginPath();ctx.strokeStyle='#58a6ff';ctx.lineWidth=1.8;
     chartBuffer.forEach((v,i)=>{
-      const x=(i/(CHART_PTS-1))*W,y=H-Math.min(v/MAX_GAUGE,1)*H;
+      const x=(i/(CHART_PTS-1))*W, y=H-Math.min(v/MAX_GAUGE,1)*H;
       i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
     });
     ctx.stroke();
@@ -363,9 +377,29 @@ function drawChart(){
     ctx.fillStyle='rgba(88,166,255,.07)';ctx.fill();
   }
 }
+
+// Chart während Messung – a_rms in mm/s², autoskalierend
+function drawChartRaw(){
+  const W=canvas.getBoundingClientRect().width, H=canvas.getBoundingClientRect().height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='rgba(88,166,255,.03)'; ctx.fillRect(0,0,W,H);
+  if(chartBuffer.some(v=>v>0)){
+    const maxVal=Math.max(...chartBuffer,10);
+    ctx.beginPath();ctx.strokeStyle='#58a6ff';ctx.lineWidth=1.8;
+    chartBuffer.forEach((v,i)=>{
+      const x=(i/(CHART_PTS-1))*W, y=H-Math.min(v/maxVal,1)*H;
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();
+    ctx.fillStyle='rgba(88,166,255,.07)';ctx.fill();
+  }
+  ctx.fillStyle='rgba(125,133,144,.7)';ctx.font='10px monospace';
+  ctx.fillText('a_rms [mm/s²]',4,H-4);
+}
 drawChart();
 
-// ── Anlagendaten Ein/Ausklappen ──────────────────────────────
+// ── Anlagendaten ─────────────────────────────────────────────
 function toggleInfo(){
   const body=document.getElementById('infoBody');
   const chev=document.getElementById('infoChevron');
@@ -382,16 +416,17 @@ function updateInfoSummary(){
   document.getElementById('infoSummary').textContent=sum;
 }
 
-// ── Filter ──────────────────────────────────────────────────
-function hpFilter(state,fc,dt,xNew){
-  const RC=1.0/(2.0*Math.PI*fc),alpha=RC/(RC+dt);
+// ── IIR Hochpass-Filter ──────────────────────────────────────
+// y[n] = α·(y[n-1] + x[n] - x[n-1]),  α = RC/(RC+dt), RC=1/(2π·fc)
+function hpFilter(state, fc, dt, xNew){
+  const RC=1.0/(2.0*Math.PI*fc), alpha=RC/(RC+dt);
   const yNew=alpha*(state.y+xNew-state.xp);
-  state.xp=xNew;state.y=yNew;return yNew;
+  state.xp=xNew; state.y=yNew; return yNew;
 }
 
 // ── Sensor Permission ────────────────────────────────────────
 async function requestSensor(){
-  if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+  if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
     try{
       const res=await DeviceMotionEvent.requestPermission();
       if(res==='granted'){onSensorGranted();}
@@ -408,106 +443,16 @@ function onSensorGranted(){
   showToast('Sensor freigegeben');
 }
 
-// ── Signalpfad ───────────────────────────────────────────────
-// ZWEISTUFIG:
-// Phase 1 (während Messung): a_rms in mm/s² akkumulieren
-//   + Rohsignal für FFT puffern (max. 4096 Samples)
-// Phase 2 (nach Messung): FFT → dominante Frequenz f →
-//   Veff = a_rms / (2π·f)  [mm/s]
-// Kein Integrationsdrift möglich.
-
-const FFT_SIZE=4096;      // Muss Potenz von 2 sein
-let rawSignal=[];         // Rohsignal [m/s²] für FFT, max FFT_SIZE Samples
-let aRmsAcc=0;            // Σ a² akkumuliert
-let aRmsCount=0;
-let finalFreq=null;       // Hz nach FFT
-let finalArms=null;       // mm/s² nach Messung
-
-function handleMotion(e){
-  if(!measuring) return;
-  const now=e.timeStamp||performance.now();
-  const acc=e.acceleration||e.accelerationIncludingGravity;
-  if(!acc) return;
-  const ax=acc.x||0,ay=acc.y||0,az=acc.z||0;
-
-  if(lastTime===null){lastTime=now;measureStartTime=now;lastLogTime=now;return;}
-  const dt=(now-lastTime)/1000.0;lastTime=now;
-  if(dt<=0||dt>0.5) return;
-  fs_est=fs_est*0.95+(1/dt)*0.05;
-
-  // HP-Filter auf Beschleunigung (fc=2 Hz) – entfernt DC/Gravitation
-  const axHP=hpFilter(hpAcc.x,FC_ACC,dt,ax);
-  const ayHP=hpFilter(hpAcc.y,FC_ACC,dt,ay);
-  const azHP=hpFilter(hpAcc.z,FC_ACC,dt,az);
-
-  // Betrag [m/s²]
-  const aMag=Math.sqrt(axHP*axHP+ayHP*ayHP+azHP*azHP);
-
-  // Debug
-  if(chartTick%10===0){
-    document.getElementById('dbgX').textContent=ax.toFixed(2);
-    document.getElementById('dbgY').textContent=ay.toFixed(2);
-    document.getElementById('dbgZ').textContent=az.toFixed(2);
-    document.getElementById('dbgVx').textContent=(aMag*1000).toFixed(1);
-    document.getElementById('dbgVy').textContent=aRmsCount>0?(Math.sqrt(aRmsAcc/aRmsCount)*1000).toFixed(1):'—';
-    document.getElementById('dbgVz').textContent=String(aRmsCount);
-  }
-
-  // Einschwingzeit 3s abwarten
-  const elapsed=(now-measureStartTime)/1000.0;
-  if(elapsed<3.0){
-    document.getElementById('durationInfo').textContent=`Einschwingen… ${(3-elapsed).toFixed(0)}s`;
-    return;
-  }
-
-  // ── Phase 1: a² akkumulieren für RMS ────────────────────────
-  aRmsAcc+=aMag*aMag;
-  aRmsCount++;
-
-  // ── Rohsignal für FFT puffern (X-Achse, HP-gefiltert) ───────
-  // Nur bis FFT_SIZE Samples speichern
-  if(rawSignal.length<FFT_SIZE) rawSignal.push(axHP);
-
-  // Live-Anzeige: a_rms in mm/s² (noch kein Veff)
-  if(aRmsCount>=5){
-    const arms_mms2=Math.sqrt(aRmsAcc/aRmsCount)*1000.0;
-    document.getElementById('veffDisplay').textContent=arms_mms2.toFixed(1);
-    document.getElementById('veffUnit').textContent='mm/s²';
-    document.getElementById('durationInfo').textContent=`RMS über ${(elapsed-3).toFixed(0)}s`;
-    document.getElementById('needle').style.left='0%'; // Nadel während Messung neutral
-  }
-
-  // Log für PDF-Chart (a_rms Verlauf)
-  if(now-lastLogTime>=500){
-    const arms_live=aRmsCount>0?Math.sqrt(aRmsAcc/aRmsCount)*1000:0;
-    measureLog.push({t:parseFloat((elapsed-3).toFixed(1)),veff:parseFloat(arms_live.toFixed(2))});
-    lastLogTime=now;
-  }
-
-  chartTick++;
-  if(chartTick%Math.max(1,Math.round(fs_est/10))===0){
-    const arms_live=aRmsCount>0?Math.sqrt(aRmsAcc/aRmsCount)*1000:0;
-    chartBuffer.push(arms_live);
-    if(chartBuffer.length>CHART_PTS) chartBuffer.shift();
-    // Chart während Messung in mm/s² – Skalierung temporär anpassen
-    drawChartRaw(arms_live);
-    document.getElementById('chartDurLabel').textContent=(elapsed-3).toFixed(0)+' s';
-  }
-}
-
-// ── FFT (Cooley-Tukey, radix-2) ──────────────────────────────
+// ── FFT (Cooley-Tukey radix-2 mit Hanning-Fenster) ──────────
 function computeFFT(signal){
-  const N=signal.length;
-  // Auf nächste Potenz von 2 auffüllen/kürzen
-  let n=1; while(n<N) n<<=1; n>>=1; // nächst-niedrigere Potenz
-  const re=new Float64Array(n);
-  const im=new Float64Array(n);
-  // Hanning-Fenster anwenden
+  // Auf größte Potenz von 2 ≤ signal.length kürzen
+  let n=1; while(n*2<=signal.length) n<<=1;
+  const re=new Float64Array(n), im=new Float64Array(n);
   for(let i=0;i<n;i++){
-    const w=0.5*(1-Math.cos(2*Math.PI*i/(n-1)));
+    const w=0.5*(1-Math.cos(2*Math.PI*i/(n-1))); // Hanning
     re[i]=signal[i]*w;
   }
-  // Bit-Reversal
+  // Bit-Reversal-Permutation
   let j=0;
   for(let i=1;i<n;i++){
     let bit=n>>1;
@@ -518,13 +463,13 @@ function computeFFT(signal){
   // Butterfly
   for(let len=2;len<=n;len<<=1){
     const ang=-2*Math.PI/len;
-    const wRe=Math.cos(ang),wIm=Math.sin(ang);
+    const wRe=Math.cos(ang), wIm=Math.sin(ang);
     for(let i=0;i<n;i+=len){
-      let curRe=1,curIm=0;
+      let curRe=1, curIm=0;
       for(let k=0;k<len/2;k++){
-        const uRe=re[i+k],uIm=im[i+k];
-        const vRe=re[i+k+len/2]*curRe-im[i+k+len/2]*curIm;
-        const vIm=re[i+k+len/2]*curIm+im[i+k+len/2]*curRe;
+        const uRe=re[i+k], uIm=im[i+k];
+        const vRe=re[i+k+len/2]*curRe - im[i+k+len/2]*curIm;
+        const vIm=re[i+k+len/2]*curIm + im[i+k+len/2]*curRe;
         re[i+k]=uRe+vRe; im[i+k]=uIm+vIm;
         re[i+k+len/2]=uRe-vRe; im[i+k+len/2]=uIm-vIm;
         const tmp=curRe*wRe-curIm*wIm;
@@ -532,122 +477,195 @@ function computeFFT(signal){
       }
     }
   }
-  // Amplitudenspektrum (nur positive Frequenzen)
   const half=n/2;
   const mag=new Float64Array(half);
   for(let i=0;i<half;i++) mag[i]=Math.sqrt(re[i]*re[i]+im[i]*im[i]);
-  return {mag,n};
+  return {mag, n};
 }
 
 function findDominantFreq(signal, fs){
-  if(signal.length<64) return 25.0; // Fallback
-  const {mag,n}=computeFFT(signal);
-  // Suche Peak zwischen 1 Hz und 200 Hz
-  const fMin=Math.ceil(1.0*n/fs);
-  const fMax=Math.floor(200.0*n/fs);
-  let maxMag=0,maxIdx=fMin;
-  for(let i=fMin;i<=Math.min(fMax,mag.length-1);i++){
-    if(mag[i]>maxMag){maxMag=mag[i];maxIdx=i;}
+  if(signal.length<64) return 25.0; // Fallback wenn zu wenig Daten
+  const {mag, n}=computeFFT(signal);
+  // Peak zwischen 1 Hz und 200 Hz suchen
+  const idxMin=Math.max(1, Math.ceil(1.0*n/fs));
+  const idxMax=Math.min(mag.length-1, Math.floor(200.0*n/fs));
+  let maxMag=0, maxIdx=idxMin;
+  for(let i=idxMin;i<=idxMax;i++){
+    if(mag[i]>maxMag){maxMag=mag[i]; maxIdx=i;}
   }
-  return maxIdx*fs/n; // Hz
+  return maxIdx*fs/n; // [Hz]
 }
 
-// ── Chart während Messung (a_rms in mm/s²) ──────────────────
-function drawChartRaw(currentArms){
-  const W=canvas.getBoundingClientRect().width,H=canvas.getBoundingClientRect().height;
-  ctx.clearRect(0,0,W,H);
-  // Einfacher grauer Hintergrund während Messung
-  ctx.fillStyle='rgba(88,166,255,.03)'; ctx.fillRect(0,0,W,H);
-  if(chartBuffer.some(v=>v>0)){
-    const maxVal=Math.max(...chartBuffer,10);
-    ctx.beginPath();ctx.strokeStyle='#58a6ff';ctx.lineWidth=1.8;
-    chartBuffer.forEach((v,i)=>{
-      const x=(i/(CHART_PTS-1))*W,y=H-Math.min(v/maxVal,1)*H;
-      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+// ── Signalpfad (DeviceMotion Handler) ────────────────────────
+// Phase 1: HP-Filter → a_rms akkumulieren + Rohsignal für FFT
+function handleMotion(e){
+  if(!measuring) return;
+  const now=e.timeStamp||performance.now();
+
+  // e.acceleration ist gravitationsbereinigt (iOS/Android)
+  // Fallback auf accelerationIncludingGravity nur wenn nötig
+  const acc=e.acceleration||e.accelerationIncludingGravity;
+  if(!acc) return;
+  const ax=acc.x||0, ay=acc.y||0, az=acc.z||0;
+
+  if(lastTime===null){lastTime=now; measureStartTime=now; lastLogTime=now; return;}
+  const dt=(now-lastTime)/1000.0; lastTime=now;
+  if(dt<=0||dt>0.5) return;
+  fs_est=fs_est*0.95+(1/dt)*0.05;
+
+  // HP-Filter (fc=2 Hz) – entfernt DC-Offset und sehr langsame Bewegungen
+  const axHP=hpFilter(hpAcc.x, FC_ACC, dt, ax);
+  const ayHP=hpFilter(hpAcc.y, FC_ACC, dt, ay);
+  const azHP=hpFilter(hpAcc.z, FC_ACC, dt, az);
+
+  // Betrag der Beschleunigung [m/s²]
+  const aMag=Math.sqrt(axHP*axHP+ayHP*ayHP+azHP*azHP);
+
+  // Debug-Anzeige (gedrosselt ~10 Hz)
+  if(chartTick%10===0){
+    document.getElementById('dbgX').textContent=ax.toFixed(2);
+    document.getElementById('dbgY').textContent=ay.toFixed(2);
+    document.getElementById('dbgZ').textContent=az.toFixed(2);
+    document.getElementById('dbgVx').textContent=(aMag*1000).toFixed(1);
+    document.getElementById('dbgVy').textContent=aRmsCount>0?(Math.sqrt(aRmsAcc/aRmsCount)*1000).toFixed(1):'—';
+    document.getElementById('dbgVz').textContent=String(aRmsCount);
+  }
+
+  // Einschwingzeit 3s abwarten (Filter stabilisieren sich)
+  const elapsed=(now-measureStartTime)/1000.0;
+  if(elapsed<3.0){
+    document.getElementById('durationInfo').textContent=`Einschwingen… ${(3-elapsed).toFixed(0)}s`;
+    return;
+  }
+
+  // a² akkumulieren für späteren RMS
+  aRmsAcc+=aMag*aMag;
+  aRmsCount++;
+
+  // X-Signal für FFT puffern (max FFT_SIZE Samples)
+  if(rawSignal.length<FFT_SIZE) rawSignal.push(axHP);
+
+  // Live-Anzeige: aktueller a_rms in mm/s² (noch kein Veff)
+  if(aRmsCount>=5){
+    const arms_live=Math.sqrt(aRmsAcc/aRmsCount)*1000.0;
+    document.getElementById('veffDisplay').textContent=arms_live.toFixed(1);
+    document.getElementById('veffUnit').textContent='mm/s²';
+    document.getElementById('durationInfo').textContent=`Messung: ${(elapsed-3).toFixed(0)}s`;
+  }
+
+  // Log für PDF-Chart (~2 Hz)
+  if(now-lastLogTime>=500){
+    const arms_log=aRmsCount>0?Math.sqrt(aRmsAcc/aRmsCount)*1000:0;
+    measureLog.push({
+      t: parseFloat((elapsed-3).toFixed(1)),
+      arms: parseFloat(arms_log.toFixed(2)),
+      veff: 0  // wird in Phase 2 berechnet
     });
-    ctx.stroke();
-    ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();
-    ctx.fillStyle='rgba(88,166,255,.07)';ctx.fill();
+    lastLogTime=now;
   }
-  // Einheit anzeigen
-  ctx.fillStyle='rgba(125,133,144,.6)';ctx.font='10px monospace';
-  ctx.fillText('a_rms [mm/s²]',4,H-4);
+
+  // Chart-Update (~10 Hz)
+  chartTick++;
+  if(chartTick%Math.max(1,Math.round(fs_est/10))===0){
+    const arms_chart=aRmsCount>0?Math.sqrt(aRmsAcc/aRmsCount)*1000:0;
+    chartBuffer.push(arms_chart);
+    if(chartBuffer.length>CHART_PTS) chartBuffer.shift();
+    drawChartRaw();
+    document.getElementById('chartDurLabel').textContent=(elapsed-3).toFixed(0)+' s';
+  }
 }
 
-// ── Start/Stop ───────────────────────────────────────────────
+// ── Start ────────────────────────────────────────────────────
 function startLive(){
   if(!sensorGranted){showToast('Sensor zuerst freigeben');return;}
-  measuring=true;lastTime=null;
-  velRaw={x:0,y:0,z:0};
+  // Alles zurücksetzen
+  measuring=true; lastTime=null;
   hpAcc={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
-  hpVel={x:{y:0,xp:0},y:{y:0,xp:0},z:{y:0,xp:0}};
-  zeroCrossCount=0;zeroCrossTime=0;lastAccSign=0;freqEst=25.0;
-  rawSignal=[];aRmsAcc=0;aRmsCount=0;finalFreq=null;finalArms=null;
-  chartBuffer=new Array(CHART_PTS).fill(0);chartTick=0;
-  currentVeff=0;v2Sum=0;v2Count=0;measureLog=[];
+  rawSignal=[]; aRmsAcc=0; aRmsCount=0;
+  finalFreq=null; finalArms=null; currentVeff=0;
+  chartBuffer=new Array(CHART_PTS).fill(0); chartTick=0;
+  measureLog=[];
   document.getElementById('veffUnit').textContent='mm/s²';
   document.getElementById('veffDisplay').textContent='—';
-  window.addEventListener('devicemotion',handleMotion);
+  document.getElementById('statusCard').className='status-card gut';
+  document.getElementById('statusBadge').textContent='LÄUFT';
+  document.getElementById('needle').style.left='0%';
+
+  window.addEventListener('devicemotion', handleMotion);
   document.getElementById('btnStart').disabled=true;
   document.getElementById('btnStop').disabled=false;
   document.getElementById('btnSnap').disabled=false;
-  let remaining=measureDuration+3;  // +3s Einschwingzeit
+
+  // Countdown: 3s Einschwingen + Messdauer
+  let remaining=measureDuration+3;
+  document.getElementById('measureInfo').textContent=`Einschwingen… 3s`;
   measureTimer=setInterval(()=>{
     remaining--;
-    const measRemain=remaining-0;
     if(remaining>measureDuration){
       document.getElementById('measureInfo').textContent=`Einschwingen… ${remaining-measureDuration}s`;
     } else if(remaining>0){
-      document.getElementById('measureInfo').textContent=`RMS-Messung läuft … ${remaining}s`;
+      document.getElementById('measureInfo').textContent=`Messung läuft … ${remaining}s`;
     } else {
       stopLive(true);
     }
   },1000);
 }
+
+// ── Stop + Phase 2: FFT → Veff ───────────────────────────────
 function stopLive(autoSave){
-  measuring=false;clearInterval(measureTimer);
-  window.removeEventListener('devicemotion',handleMotion);lastTime=null;
+  measuring=false;
+  clearInterval(measureTimer);
+  window.removeEventListener('devicemotion', handleMotion);
+  lastTime=null;
   document.getElementById('btnStart').disabled=false;
   document.getElementById('btnStop').disabled=true;
   document.getElementById('btnSnap').disabled=true;
 
-  // ── Phase 2: FFT → dominante Frequenz → Veff ────────────────
-  if(aRmsCount>5&&rawSignal.length>=64){
-    finalFreq=findDominantFreq(rawSignal, fs_est);
-    finalArms=Math.sqrt(aRmsAcc/aRmsCount)*1000.0;  // mm/s²
-    const omega=2.0*Math.PI*finalFreq;
-    currentVeff=finalArms/omega;                     // mm/s
-
-    // Anzeige auf Veff umschalten
-    document.getElementById('veffDisplay').textContent=currentVeff.toFixed(2);
-    document.getElementById('veffUnit').textContent='mm/s';
-    document.getElementById('durationInfo').textContent=`f=${finalFreq.toFixed(1)} Hz · a=${finalArms.toFixed(0)} mm/s²`;
-    updateDisplay(currentVeff);
-    document.getElementById('measureInfo').textContent=
-      `Veff=${currentVeff.toFixed(2)} mm/s · f=${finalFreq.toFixed(1)} Hz · a_rms=${finalArms.toFixed(0)} mm/s²`;
-
-    // PDF-Log mit Veff-Werten neu berechnen
-    measureLog=measureLog.map(p=>({...p,
-      veff:parseFloat(((p.veff)/omega).toFixed(2))
-    }));
-    // Chart neu zeichnen mit Veff-Skala
-    chartBuffer=measureLog.map(p=>p.veff);
-    drawChart();
-  } else {
+  if(aRmsCount<10||rawSignal.length<64){
     document.getElementById('measureInfo').textContent='Zu wenig Daten – bitte erneut messen';
+    return;
   }
 
+  // Phase 2: FFT auf gepuffertem Signal
+  finalFreq=findDominantFreq(rawSignal, fs_est);
+  finalArms=Math.sqrt(aRmsAcc/aRmsCount)*1000.0;  // mm/s²
+  const omega=2.0*Math.PI*finalFreq;               // rad/s
+  currentVeff=finalArms/omega;                     // mm/s
+
+  // Veff in Log-Einträge zurückrechnen (für PDF-Chart)
+  measureLog=measureLog.map(p=>({...p, veff:parseFloat((p.arms/omega).toFixed(2))}));
+
+  // Anzeige umschalten auf mm/s
+  document.getElementById('veffDisplay').textContent=currentVeff.toFixed(2);
+  document.getElementById('veffUnit').textContent='mm/s';
+  document.getElementById('durationInfo').textContent=
+    `f=${finalFreq.toFixed(1)} Hz · a=${finalArms.toFixed(0)} mm/s²`;
+  document.getElementById('measureInfo').textContent=
+    `Veff=${currentVeff.toFixed(2)} mm/s · f=${finalFreq.toFixed(1)} Hz · a_rms=${finalArms.toFixed(0)} mm/s²`;
+
+  // Gauge und Badge aktualisieren
+  const cls=classify(currentVeff);
+  document.getElementById('statusCard').className='status-card '+cls;
+  document.getElementById('needle').style.left=Math.min(currentVeff/MAX_GAUGE*100,100)+'%';
+  const b=document.getElementById('statusBadge');
+  b.textContent=cls==='gut'?'● GUT':cls==='warn'?'⚠ SW-ABSCHALTUNG':'🔴 HW-ABSCHALTUNG';
+
+  // Chart neu mit Veff-Skala
+  chartBuffer=measureLog.map(p=>p.veff);
+  drawChart();
+
   if(autoSave&&currentVeff>0){
-    addHistory(currentVeff,`f=${finalFreq?finalFreq.toFixed(1):'?'} Hz · a=${finalArms?finalArms.toFixed(0):'?'} mm/s²`);
+    addHistory(currentVeff,`f=${finalFreq.toFixed(1)} Hz · a=${finalArms.toFixed(0)} mm/s²`);
     document.getElementById('btnPdf').disabled=false;
     showToast(`Veff: ${currentVeff.toFixed(2)} mm/s`);
   }
 }
+
 function snapShot(){
   if(currentVeff>0){
     addHistory(currentVeff,'Snapshot');
     document.getElementById('btnPdf').disabled=false;
-    showToast(`📌 ${currentVeff.toFixed(1)} mm/s`);
+    showToast(`📌 ${currentVeff.toFixed(2)} mm/s`);
   }
 }
 function setDuration(sec){
@@ -655,29 +673,17 @@ function setDuration(sec){
   document.querySelectorAll('.dur-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.sec)===sec));
 }
 
-// ── Anzeige ──────────────────────────────────────────────────
+// ── Klassifizierung ──────────────────────────────────────────
 function classify(v){return v<LIMITS.gut?'gut':v<LIMITS.sw?'warn':'alarm';}
-function updateDisplay(v){
-  const cls=classify(v);
-  document.getElementById('veffDisplay').textContent=v.toFixed(2);
-  document.getElementById('statusCard').className='status-card '+cls;
-  document.getElementById('needle').style.left=Math.min(v/MAX_GAUGE*100,100)+'%';
-  const b=document.getElementById('statusBadge');
-  b.textContent=cls==='gut'?'● GUT':cls==='warn'?'⚠ SW-ABSCHALTUNG':'🔴 HW-ABSCHALTUNG';
-  if(measuring&&v2Count>0){
-    const elapsed=((performance.now()-measureStartTime)/1000).toFixed(0);
-    document.getElementById('durationInfo').textContent=`RMS über ${elapsed}s`;
-  }
-}
 
-// ── Verlauf (nur für PDF) ────────────────────────────────────
+// ── Verlauf (nur intern für PDF) ─────────────────────────────
 function addHistory(v,label){
   const cls=classify(v);
   const now=new Date();
   history.unshift({v,cls,
     time:now.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
     date:now.toLocaleDateString('de-DE'),
-    label,duration:measureDuration,log:[...measureLog]});
+    label, duration:measureDuration, log:[...measureLog]});
   if(history.length>30) history.pop();
 }
 
@@ -686,10 +692,10 @@ function exportPDF(){
   if(!history.length){showToast('Keine Messdaten');return;}
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const PW=210,ML=15,MR=195,CW=MR-ML;let y=15;
-  const C={dark:[13,17,23],mid:[22,27,34],border:[48,54,61],
+  const PW=210,ML=15,MR=195,CW=MR-ML; let y=15;
+  const C={dark:[13,17,23],border:[48,54,61],
     green:[46,160,67],orange:[209,138,26],red:[185,28,28],
-    text:[230,237,243],muted:[125,133,144],accent:[31,111,235],
+    muted:[125,133,144],accent:[31,111,235],
     white:[255,255,255],lightgray:[240,242,245]};
   const sf=c=>doc.setFillColor(c[0],c[1],c[2]);
   const sd=c=>doc.setDrawColor(c[0],c[1],c[2]);
@@ -713,8 +719,7 @@ function exportPDF(){
   const nowStr=new Date().toLocaleString('de-DE');
   sf(C.lightgray);sd(C.border);doc.setLineWidth(0.2);doc.roundedRect(ML,y,CW,22,2,2,'FD');
   doc.setFontSize(7);doc.setFont('helvetica','bold');st([80,80,80]);doc.text('ANLAGENDATEN',ML+3,y+5);
-  const c1=ML+3,c2=ML+CW/2+3;
-  const r1=y+10,r2=y+15,r3=y+20;
+  const c1=ML+3,c2=ML+CW/2+3,r1=y+10,r2=y+15,r3=y+20;
   doc.setFont('helvetica','bold');doc.setFontSize(7);st([100,100,100]);
   doc.text('Anlage:',c1,r1);doc.text('Seriennummer:',c2,r1);
   doc.text('Standort:',c1,r2);doc.text('Messpunkt:',c2,r2);
@@ -727,8 +732,7 @@ function exportPDF(){
 
   // Grenzwerte
   doc.setFontSize(7);doc.setFont('helvetica','bold');st([80,80,80]);
-  doc.text('GRENZWERTE NACH BETRIEBSANLEITUNG KAP. 7.1  (Trommel-Innendurchmesser 450 mm)',ML,y+5);
-  y+=8;
+  doc.text('GRENZWERTE NACH BETRIEBSANLEITUNG KAP. 7.1  (Trommel-Innendurchmesser 450 mm)',ML,y+5);y+=8;
   const gw=[{label:'Gut',range:'0 – 14.5 mm/s',col:C.green},
     {label:'Software-Abschaltung',range:'14.5 – 16.5 mm/s',col:C.orange},
     {label:'Hardware-Abschaltung',range:'> 16.5 mm/s',col:C.red}];
@@ -738,12 +742,15 @@ function exportPDF(){
     sf(g.col);sd(g.col);doc.setLineWidth(0.3);doc.roundedRect(x,y,gw_w,10,1.5,1.5,'FD');
     st(C.white);doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.text(g.label,x+gw_w/2,y+4.5,{align:'center'});
     doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text(g.range,x+gw_w/2,y+8.5,{align:'center'});
-  });
-  y+=15;
+  });y+=15;
 
-  doc.setFontSize(7);doc.setFont('helvetica','bold');st([80,80,80]);doc.text('MESSERGEBNISSE',ML,y+5);y+=8;
-  const cols=[{label:'Nr.',w:10},{label:'Datum',w:25},{label:'Uhrzeit',w:20},
-    {label:'Veff RMS [mm/s]',w:38},{label:'Dauer [s]',w:20},{label:'Bewertung',w:CW-113}];
+  // Messtabelle
+  doc.setFontSize(7);doc.setFont('helvetica','bold');st([80,80,80]);
+  doc.text('MESSERGEBNISSE',ML,y+5);y+=8;
+  const cols=[
+    {label:'Nr.',w:10},{label:'Datum',w:25},{label:'Uhrzeit',w:20},
+    {label:'Veff RMS [mm/s]',w:35},{label:'f [Hz]',w:18},
+    {label:'a_rms [mm/s²]',w:28},{label:'Dauer [s]',w:18},{label:'Bewertung',w:CW-154}];
   let cx=ML;
   sf([220,225,232]);sd(C.border);doc.setLineWidth(0.15);doc.rect(ML,y,CW,7,'FD');
   doc.setFont('helvetica','bold');doc.setFontSize(7);st([40,40,40]);
@@ -753,25 +760,32 @@ function exportPDF(){
     const rowBg=cls==='gut'?[235,250,238]:cls==='warn'?[255,245,225]:[255,232,232];
     sf(rowBg);sd([200,205,210]);doc.setLineWidth(0.1);doc.rect(ML,y,CW,7,'FD');
     const bewCol=cls==='gut'?C.green:cls==='warn'?C.orange:C.red;
-    const bew=cls==='gut'?'GUT':cls==='warn'?'SW-ABSCHALTUNG':'HW-ABSCHALTUNG';
+    const bew=cls==='gut'?'GUT':cls==='warn'?'SW-ABSCHALT.':'HW-ABSCHALT.';
+    // Frequenz und a_rms aus label parsen
+    const fMatch=(h.label||'').match(/f=([\d.]+)/);
+    const aMatch=(h.label||'').match(/a=([\d.]+)/);
+    const fStr=fMatch?fMatch[1]:'—';
+    const aStr=aMatch?aMatch[1]:'—';
     doc.setFont('helvetica','normal');doc.setFontSize(7.5);st([30,30,30]);
     cx=ML;
-    [String(history.length-i),h.date||'—',h.time||'—',h.v.toFixed(2),String(h.duration||'—')]
+    [String(history.length-i),h.date||'—',h.time||'—',
+     h.v.toFixed(2),fStr,aStr,String(h.duration||'—')]
       .forEach((v,j)=>{doc.text(v,cx+1.5,y+4.8);cx+=cols[j].w;});
-    sf(bewCol);doc.setLineWidth(0);doc.roundedRect(cx+1,y+1.5,cols[5].w-2,4,1,1,'F');
-    st(C.white);doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.text(bew,cx+cols[5].w/2,y+4.5,{align:'center'});
-    y+=7;if(y>265){doc.addPage();y=20;}
+    sf(bewCol);doc.setLineWidth(0);doc.roundedRect(cx+1,y+1.5,cols[7].w-2,4,1,1,'F');
+    st(C.white);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
+    doc.text(bew,cx+cols[7].w/2,y+4.5,{align:'center'});
+    y+=7; if(y>265){doc.addPage();y=20;}
   });y+=6;
 
-  // Zeitverlauf
+  // Zeitverlauf letzte Messung
   if(history[0]&&history[0].log&&history[0].log.length>1){
     if(y>230){doc.addPage();y=20;}
     doc.setFontSize(7);doc.setFont('helvetica','bold');st([80,80,80]);
     doc.text('ZEITVERLAUF LETZTE MESSUNG (Veff in mm/s)',ML,y+5);y+=8;
-    const log=history[0].log,GH=40,GW=CW;
-    const vmax=Math.max(...log.map(p=>p.veff),LIMITS.hw+2,5);
+    const log=history[0].log, GH=40, GW=CW;
+    const vmax=Math.max(...log.map(p=>p.veff),LIMITS.hw+2,1);
     sf([245,247,250]);sd(C.border);doc.setLineWidth(0.2);doc.rect(ML,y,GW,GH,'FD');
-    const yGut=y+GH-(LIMITS.gut/vmax)*GH,ySW=y+GH-(LIMITS.sw/vmax)*GH;
+    const yGut=y+GH-(LIMITS.gut/vmax)*GH, ySW=y+GH-(LIMITS.sw/vmax)*GH;
     sf([235,252,238]);doc.rect(ML,yGut,GW,y+GH-yGut,'F');
     sf([255,243,210]);doc.rect(ML,ySW,GW,yGut-ySW,'F');
     sf([255,228,228]);doc.rect(ML,y,GW,ySW-y,'F');
@@ -779,30 +793,33 @@ function exportPDF(){
       const ly=y+GH-(v/vmax)*GH;
       sd(c);doc.setLineWidth(0.4);doc.setLineDashPattern([1,1],0);
       doc.line(ML,ly,ML+GW,ly);doc.setLineDashPattern([],0);
-      st(c);doc.setFontSize(5.5);doc.setFont('helvetica','bold');doc.text(v.toFixed(1),ML+GW-8,ly-1);
+      st(c);doc.setFontSize(5.5);doc.setFont('helvetica','bold');
+      doc.text(v.toFixed(1),ML+GW-8,ly-1);
     });
     if(log.length>1){
       const tMax=log[log.length-1].t||1;
-      const pts=log.map(p=>({px:ML+(p.t/tMax)*GW,py:y+GH-(Math.min(p.veff,vmax)/vmax)*GH}));
+      const pts=log.map(p=>({px:ML+(p.t/tMax)*GW, py:y+GH-(Math.min(p.veff,vmax)/vmax)*GH}));
       sd(C.accent);doc.setLineWidth(0.8);doc.setLineDashPattern([],0);
       doc.lines(pts.slice(1).map((p,i)=>[p.px-pts[i].px,p.py-pts[i].py]),pts[0].px,pts[0].py);
     }
     sd(C.border);doc.setLineWidth(0.3);doc.rect(ML,y,GW,GH);
     st([100,100,100]);doc.setFont('helvetica','normal');doc.setFontSize(6);
     doc.text('0',ML-1,y+GH,{align:'right'});
-    doc.text(vmax.toFixed(0),ML-1,y+3,{align:'right'});
-    const tMax2=log[log.length-1].t||measureDuration;
-    doc.text('0 s',ML,y+GH+4);doc.text(tMax2.toFixed(0)+' s',ML+GW,y+GH+4,{align:'right'});
+    doc.text(vmax.toFixed(1),ML-1,y+3,{align:'right'});
+    const tLast=log[log.length-1].t||measureDuration;
+    doc.text('0 s',ML,y+GH+4);
+    doc.text(tLast.toFixed(0)+' s',ML+GW,y+GH+4,{align:'right'});
     y+=GH+10;
   }
 
   // Fußzeile
   if(y>270){doc.addPage();y=20;}
-  sf([240,242,245]);sd(C.border);doc.setLineWidth(0.15);doc.rect(ML,y,CW,16,'FD');
+  sf([240,242,245]);sd(C.border);doc.setLineWidth(0.15);doc.rect(ML,y,CW,18,'FD');
   doc.setFontSize(6.5);doc.setFont('helvetica','normal');st([100,100,100]);
-  doc.text('Signalpfad: e.acceleration → HP-Filter 2 Hz → a_rms → Veff = a_rms / (2π·f) · Keine Integration · f per Nulldurchgangs-Zählung',ML+3,y+5);
-  doc.text('Grenzwerte: Hiller GmbH Betriebsanleitung Kap. 7.1, Trommel-Innendurchmesser 450 mm (Typen 35, 37, 45)',ML+3,y+10);
-  doc.text('HINWEIS: Diese Messung ersetzt keine kalibrierte Schwingungsmessung nach ISO 10816 / VDI 2056.',ML+3,y+15);
+  doc.text('Signalpfad: e.acceleration (ohne Gravitation) → HP-Filter 2 Hz → a_rms [mm/s²] + FFT-Puffer',ML+3,y+5);
+  doc.text('Nach Messung: FFT (Hanning-Fenster, Cooley-Tukey) → dominante Frequenz f → Veff = a_rms / (2π·f)  [mm/s]',ML+3,y+10);
+  doc.text('Grenzwerte: Hiller GmbH Betriebsanleitung Kap. 7.1, Trommel-Innendurchmesser 450 mm (Typen 35, 37, 45)',ML+3,y+15);
+  doc.text('HINWEIS: Diese Messung ersetzt keine kalibrierte Schwingungsmessung nach ISO 10816 / VDI 2056.',ML+3,y+20);
   const pages=doc.internal.getNumberOfPages();
   for(let i=1;i<=pages;i++){
     doc.setPage(i);st([150,150,150]);doc.setFontSize(7);
@@ -824,9 +841,9 @@ function showToast(msg){
   if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission!=='function'){
     onSensorGranted();
   }
-  updateDisplay(0);
   document.getElementById('veffDisplay').textContent='—';
   document.getElementById('statusBadge').textContent='BEREIT';
+  drawChart();
 })();
 </script>
 </body>
