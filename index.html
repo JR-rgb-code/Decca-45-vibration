@@ -8,150 +8,265 @@
 <meta name="apple-mobile-web-app-title" content="Deca 45">
 <title>Hiller Deca 45</title>
 <style>
-body{margin:0;padding:0;background:#0d1117;color:#e6edf3;font-family:Arial,sans-serif;font-size:16px;}
-h2{margin:0;font-size:18px;letter-spacing:1px;}
-p{margin:4px 0;font-size:12px;color:#7d8590;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:#0d1117;color:#e6edf3;font-family:Arial,sans-serif;font-size:14px;}
+#app{max-width:430px;margin:0 auto;padding:0 0 40px;}
 
-#app{max-width:420px;margin:0 auto;padding:12px;}
+/* HEADER */
+.hdr{background:#161b22;border-bottom:1px solid #30363d;
+  padding:max(env(safe-area-inset-top),10px) 12px 10px;
+  display:flex;align-items:center;gap:10px;}
+.hlogo{width:28px;height:28px;border:2px solid #1f6feb;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:bold;color:#1f6feb;flex-shrink:0;}
+.htxt h1{font-size:16px;font-weight:bold;letter-spacing:1px;}
+.htxt p{font-size:10px;color:#7d8590;margin-top:1px;}
+.sdot{margin-left:auto;width:9px;height:9px;border-radius:50%;
+  background:#7d8590;flex-shrink:0;transition:background .3s;}
+.sdot.on{background:#3fb950;box-shadow:0 0 5px #2ea043;animation:dp 1.2s ease-in-out infinite;}
+@keyframes dp{50%{opacity:.3;}}
 
-.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;margin-bottom:10px;}
+/* PERMISSION */
+#permBox{background:rgba(31,111,235,.12);border:1px solid #1f6feb;
+  border-radius:10px;padding:12px 14px;margin:10px 12px;}
+#permBox p{font-size:12px;line-height:1.5;margin-bottom:8px;}
+#permBox small{color:#7d8590;}
+#btnPerm{width:100%;padding:12px;border-radius:8px;border:none;
+  background:#1f6feb;color:#fff;font-size:16px;font-weight:bold;cursor:pointer;}
 
-#veffBox{text-align:center;padding:20px 14px;}
-#veffBox.gut  {border-color:#2ea043;}
-#veffBox.warn {border-color:#d18a1a;}
-#veffBox.alarm{border-color:#b91c1c;}
-#veffNum{font-size:72px;font-weight:bold;line-height:1;color:#3fb950;}
-#veffNum.warn {color:#f0a32b;}
-#veffNum.alarm{color:#ef4444;}
-#veffUnit{font-size:14px;color:#7d8590;margin-top:4px;}
-#veffStatus{display:inline-block;margin-top:10px;padding:5px 14px;border-radius:16px;
-  font-size:13px;font-weight:bold;background:rgba(46,160,67,.15);color:#3fb950;}
-#veffStatus.warn {background:rgba(209,138,26,.15);color:#f0a32b;}
-#veffStatus.alarm{background:rgba(185,28,28,.15);color:#ef4444;}
-#veffInfo{font-size:11px;color:#7d8590;margin-top:6px;}
+/* STATS BAR */
+.statsbar{display:flex;gap:0;margin:10px 12px 0;
+  background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden;}
+.stat{flex:1;padding:8px 4px;text-align:center;border-right:1px solid #30363d;}
+.stat:last-child{border-right:none;}
+.stat-lbl{font-size:9px;color:#7d8590;font-family:monospace;letter-spacing:1px;text-transform:uppercase;}
+.stat-val{font-size:18px;font-weight:bold;font-family:monospace;margin-top:2px;}
+.stat-val.x{color:#ef4444;}
+.stat-val.y{color:#3fb950;}
+.stat-val.z{color:#58a6ff;}
+.stat-val.v{color:#f0a32b;}
 
-.gauge{height:18px;border-radius:3px;position:relative;margin:8px 0 4px;
-  background:linear-gradient(to right,#2ea043 0%,#2ea043 60%,#d18a1a 60%,#d18a1a 69%,#b91c1c 69%,#b91c1c 100%);opacity:.35;}
-.needle{position:absolute;top:-4px;width:3px;height:26px;background:#fff;border-radius:2px;
-  transform:translateX(-50%);box-shadow:0 0 6px rgba(255,255,255,.8);}
-.gauge-lbl{display:flex;justify-content:space-between;font-size:9px;color:#7d8590;font-family:monospace;}
+/* CHARTS */
+.chart-wrap{margin:8px 12px 0;background:#161b22;border:1px solid #30363d;border-radius:10px;padding:8px 10px;}
+.chart-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.chart-lbl{font-size:10px;color:#7d8590;font-family:monospace;letter-spacing:1px;text-transform:uppercase;}
+.chart-unit{font-size:10px;color:#7d8590;font-family:monospace;}
+canvas{width:100%;display:block;border-radius:3px;}
 
-.lbar{display:flex;gap:6px;margin-bottom:10px;}
-.litem{flex:1;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:7px;text-align:center;}
-.lv{font-size:14px;font-weight:bold;font-family:monospace;}
-.lv.g{color:#3fb950;} .lv.o{color:#f0a32b;} .lv.r{color:#ef4444;}
-.ll{font-size:9px;color:#7d8590;margin-top:2px;}
+/* AXIS BUTTONS */
+.axis-btns{display:flex;gap:6px;margin-top:6px;}
+.abtn{padding:3px 10px;border-radius:4px;border:none;font-size:11px;font-weight:bold;cursor:pointer;opacity:.4;}
+.abtn.on{opacity:1;}
+.abtn.x{background:#ef4444;color:#fff;}
+.abtn.y{background:#3fb950;color:#fff;}
+.abtn.z{background:#58a6ff;color:#fff;}
 
+/* VEFF ANZEIGE */
+.vcard{margin:8px 12px 0;background:#161b22;border:1px solid #30363d;
+  border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;
+  transition:border-color .3s;}
+.vcard.gut  {border-color:#2ea043;}
+.vcard.warn {border-color:#d18a1a;}
+.vcard.alarm{border-color:#b91c1c;animation:pb .8s ease-in-out infinite alternate;}
+@keyframes pb{to{border-color:#ef4444;}}
+.vmain{flex:1;text-align:center;}
+.vlbl{font-size:9px;color:#7d8590;letter-spacing:2px;text-transform:uppercase;font-family:monospace;}
+.vnum{font-size:56px;font-weight:bold;line-height:1;color:#3fb950;transition:color .3s;}
+.vnum.warn {color:#f0a32b;}
+.vnum.alarm{color:#ef4444;}
+.vunit{font-size:12px;color:#7d8590;margin-top:2px;}
+.vright{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;}
+.vbadge{padding:4px 10px;border-radius:12px;font-size:11px;font-weight:bold;
+  background:rgba(46,160,67,.15);color:#3fb950;}
+.vbadge.warn {background:rgba(209,138,26,.15);color:#f0a32b;}
+.vbadge.alarm{background:rgba(185,28,28,.15);color:#ef4444;}
+.vinfo{font-size:10px;color:#7d8590;font-family:monospace;text-align:right;}
+
+/* GAUGE */
+.gauge-wrap{margin:8px 12px 0;background:#161b22;border:1px solid #30363d;border-radius:10px;padding:8px 12px;}
+.gauge{height:16px;border-radius:3px;position:relative;
+  background:linear-gradient(to right,#2ea043 0%,#2ea043 60%,#d18a1a 60%,#d18a1a 69%,#b91c1c 69%,#b91c1c 100%);
+  opacity:.35;}
+.needle{position:absolute;top:-4px;width:3px;height:24px;background:#fff;border-radius:2px;
+  transform:translateX(-50%);box-shadow:0 0 6px rgba(255,255,255,.8);transition:left .1s;}
+.glbls{display:flex;justify-content:space-between;margin-top:3px;}
+.glbls span{font-size:9px;color:#7d8590;font-family:monospace;}
+.gzones{display:flex;gap:8px;margin-top:5px;flex-wrap:wrap;}
+.gz{display:flex;align-items:center;gap:4px;font-size:10px;color:#7d8590;}
+.gd{width:8px;height:8px;border-radius:2px;}
+
+/* LIMITS */
+.lbar{display:flex;gap:6px;margin:8px 12px 0;}
+.litem{flex:1;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:6px;text-align:center;}
+.lv{font-size:13px;font-weight:bold;font-family:monospace;}
+.lv.g{color:#3fb950;}.lv.o{color:#f0a32b;}.lv.r{color:#ef4444;}
+.ll{font-size:9px;color:#7d8590;margin-top:1px;}
+
+/* STEUERUNG */
+.ctrl{margin:8px 12px 0;background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 12px;}
 .drow{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-.dlbl{font-size:11px;color:#7d8590;}
+.dlbl{font-size:10px;color:#7d8590;font-family:monospace;}
 .dbtns{display:flex;gap:5px;}
 .dbtn{padding:4px 10px;border-radius:5px;border:1px solid #30363d;
-  background:#0d1117;color:#7d8590;font-size:12px;cursor:pointer;}
+  background:#0d1117;color:#7d8590;font-size:11px;cursor:pointer;}
 .dbtn.on{border-color:#1f6feb;color:#1f6feb;background:rgba(31,111,235,.1);}
-
 .brow{display:flex;gap:8px;margin-bottom:8px;}
-.btn{flex:1;padding:14px;border-radius:9px;border:none;font-size:17px;font-weight:bold;cursor:pointer;}
+.btn{flex:1;padding:13px;border-radius:9px;border:none;font-size:16px;font-weight:bold;cursor:pointer;}
 .btn:disabled{opacity:.3;}
 .bgrn{background:#2ea043;color:#fff;}
 .bred{background:#b91c1c;color:#fff;}
-.bblu{background:#1f6feb;color:#fff;flex:0 0 auto;padding:14px 16px;}
-.minfo{font-size:11px;color:#7d8590;text-align:center;}
+.bblu{background:#1f6feb;color:#fff;flex:0 0 auto;padding:13px 14px;}
+.minfo{font-size:10px;color:#7d8590;text-align:center;font-family:monospace;}
 
-#permBox{background:rgba(31,111,235,.12);border:1px solid #1f6feb;border-radius:10px;
-  padding:14px;margin-bottom:10px;}
-#permBox p{color:#e6edf3;margin-bottom:10px;}
-#permBox small{color:#7d8590;}
-#btnPerm{width:100%;padding:12px;border-radius:8px;border:none;background:#1f6feb;
-  color:#fff;font-size:17px;font-weight:bold;cursor:pointer;}
+/* ANLAGENDATEN */
+.acard{margin:8px 12px 0;background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden;}
+.atog{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;}
+.albl{font-size:10px;color:#7d8590;font-family:monospace;letter-spacing:1px;text-transform:uppercase;}
+.asum{font-size:11px;color:#e6edf3;font-family:monospace;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.achev{font-size:10px;color:#7d8590;transition:transform .25s;}
+.achev.open{transform:rotate(180deg);}
+.abody{display:none;padding:0 12px 12px;}
+.abody.open{display:block;}
+.agrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}
+.af label{font-size:10px;color:#7d8590;display:block;margin-bottom:2px;font-family:monospace;}
+.af input{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;
+  padding:6px 8px;color:#e6edf3;font-family:monospace;font-size:11px;outline:none;}
+.af input:focus{border-color:#1f6feb;}
+.af.full{grid-column:1/-1;}
 
-canvas{width:100%;height:70px;display:block;border-radius:3px;margin-top:4px;}
+/* PDF */
+.bpdf{display:block;width:calc(100% - 24px);margin:8px 12px 0;
+  padding:12px;border-radius:9px;border:1px solid #30363d;
+  background:#161b22;color:#e6edf3;font-size:14px;font-weight:bold;cursor:pointer;}
+.bpdf:disabled{opacity:.3;}
 
-.dbg{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:8px;}
-.dbgi{text-align:center;}
-.dbgv{font-size:11px;font-weight:bold;font-family:monospace;}
-.dbgl{font-size:9px;color:#7d8590;}
-
-footer{text-align:center;padding:16px;font-size:9px;color:#7d8590;line-height:1.6;}
+footer{text-align:center;padding:16px;font-size:9px;color:#7d8590;line-height:1.6;font-family:monospace;}
 </style>
 </head>
 <body>
 <div id="app">
 
-  <!-- PERMISSION -->
-  <div id="permBox">
-    <p>iPhone-Sensor einmalig freigeben.<br><small>Nur über HTTPS möglich (GitHub Pages ✓)</small></p>
-    <button id="btnPerm" onclick="doPermission()">SENSOR FREIGEBEN</button>
-  </div>
-
-  <!-- VEFF ANZEIGE -->
-  <div class="card" id="veffBox">
-    <div style="font-size:11px;color:#7d8590;letter-spacing:2px;text-transform:uppercase;">Veff</div>
-    <div id="veffNum">—</div>
-    <div id="veffUnit">mm/s</div>
-    <div id="veffStatus">BEREIT</div>
-    <div id="veffInfo">—</div>
-  </div>
-
-  <!-- GAUGE -->
-  <div class="card" style="padding:10px 14px;">
-    <div class="gauge"><div class="needle" id="needle" style="left:0%"></div></div>
-    <div class="gauge-lbl"><span>0</span><span>6</span><span>12</span><span>14.5</span><span>16.5</span><span>24</span></div>
-  </div>
-
-  <!-- STEUERUNG -->
-  <div class="card">
-    <div class="drow">
-      <div class="dlbl">MESSDAUER:</div>
-      <div class="dbtns">
-        <button class="dbtn" onclick="setDur(5)">5s</button>
-        <button class="dbtn on" id="d10" onclick="setDur(10)">10s</button>
-        <button class="dbtn" onclick="setDur(30)">30s</button>
-        <button class="dbtn" onclick="setDur(60)">60s</button>
-      </div>
-    </div>
-    <div class="brow">
-      <button class="btn bgrn" id="btnStart" onclick="doStart()" disabled>▶ START</button>
-      <button class="btn bred" id="btnStop"  onclick="doStop(true)" disabled>■ STOP</button>
-      <button class="btn bblu" id="btnSnap"  onclick="doSnap()" disabled>📌</button>
-    </div>
-    <div class="minfo" id="minfo">Sensor freigeben, dann START drücken</div>
-  </div>
-
-  <!-- GRENZWERTE -->
-  <div class="lbar">
-    <div class="litem"><div class="lv g">14.5</div><div class="ll">mm/s · Gut</div></div>
-    <div class="litem"><div class="lv o">16.5</div><div class="ll">mm/s · SW-Abs.</div></div>
-    <div class="litem"><div class="lv r">18.0</div><div class="ll">mm/s · HW-Abs.</div></div>
-  </div>
-
-  <!-- CHART -->
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:#7d8590;font-family:monospace;">
-      <span id="ctitle">Live-Verlauf</span><span id="cdur">— s</span>
-    </div>
-    <canvas id="cv"></canvas>
-  </div>
-
-  <!-- DEBUG -->
-  <div class="card">
-    <div style="font-size:10px;color:#7d8590;font-family:monospace;letter-spacing:1px;margin-bottom:6px;">SENSOR-ROHWERTE</div>
-    <div class="dbg">
-      <div class="dbgi"><div class="dbgv" id="dax">—</div><div class="dbgl">Acc X</div></div>
-      <div class="dbgi"><div class="dbgv" id="day">—</div><div class="dbgl">Acc Y</div></div>
-      <div class="dbgi"><div class="dbgv" id="daz">—</div><div class="dbgl">Acc Z</div></div>
-      <div class="dbgi"><div class="dbgv" id="df">—</div><div class="dbgl">f Hz</div></div>
-      <div class="dbgi"><div class="dbgv" id="da">—</div><div class="dbgl">a_rms</div></div>
-      <div class="dbgi"><div class="dbgv" id="dn">—</div><div class="dbgl">N</div></div>
-    </div>
-  </div>
-
-  <!-- PDF -->
-  <button class="btn" id="btnPdf" onclick="doPdf()" disabled
-    style="width:100%;background:#161b22;border:1px solid #30363d;color:#e6edf3;
-    font-size:15px;margin-bottom:10px;">📄 MESSPROTOKOLL PDF</button>
-
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hlogo">H</div>
+  <div class="htxt"><h1>HILLER DECA 45</h1><p>∅ 450 mm · Veff Messung</p></div>
+  <div class="sdot" id="sdot"></div>
 </div>
 
+<!-- PERMISSION -->
+<div id="permBox">
+  <p>iPhone-Sensor einmalig freigeben.<br><small>Nur über HTTPS möglich (GitHub Pages ✓)</small></p>
+  <button id="btnPerm" onclick="doPermission()">SENSOR FREIGEBEN</button>
+</div>
+
+<!-- STATS: X Y Z MAX + VEFF -->
+<div class="statsbar">
+  <div class="stat"><div class="stat-lbl">X [m/s²]</div><div class="stat-val x" id="sx">—</div></div>
+  <div class="stat"><div class="stat-lbl">Y [m/s²]</div><div class="stat-val y" id="sy">—</div></div>
+  <div class="stat"><div class="stat-lbl">Z [m/s²]</div><div class="stat-val z" id="sz">—</div></div>
+  <div class="stat"><div class="stat-lbl">Veff [mm/s]</div><div class="stat-val v" id="sv">—</div></div>
+</div>
+
+<!-- CHART 1: ROHBESCHLEUNIGUNG -->
+<div class="chart-wrap">
+  <div class="chart-title">
+    <span class="chart-lbl">Rohbeschleunigung (HP-gefiltert)</span>
+    <span class="chart-unit">[m/s²]</span>
+  </div>
+  <canvas id="cvAcc" height="100"></canvas>
+  <div class="axis-btns">
+    <button class="abtn x on" id="axX" onclick="toggleAxis('x')">X</button>
+    <button class="abtn y on" id="axY" onclick="toggleAxis('y')">Y</button>
+    <button class="abtn z on" id="axZ" onclick="toggleAxis('z')">Z</button>
+  </div>
+</div>
+
+<!-- CHART 2: VEFF -->
+<div class="chart-wrap">
+  <div class="chart-title">
+    <span class="chart-lbl">Veff laufend</span>
+    <span class="chart-unit">[mm/s]</span>
+  </div>
+  <canvas id="cvVeff" height="80"></canvas>
+</div>
+
+<!-- VEFF ERGEBNIS -->
+<div class="vcard gut" id="vcard">
+  <div class="vmain">
+    <div class="vlbl">Veff</div>
+    <div class="vnum" id="vnum">—</div>
+    <div class="vunit" id="vunit">mm/s</div>
+  </div>
+  <div class="vright">
+    <div class="vbadge" id="vbadge">BEREIT</div>
+    <div class="vinfo" id="vinfo">—</div>
+  </div>
+</div>
+
+<!-- GAUGE -->
+<div class="gauge-wrap">
+  <div class="gauge"><div class="needle" id="needle" style="left:0%"></div></div>
+  <div class="glbls"><span>0</span><span>6</span><span>12</span><span>14.5</span><span>16.5</span><span>24</span></div>
+  <div class="gzones">
+    <div class="gz"><div class="gd" style="background:#2ea043"></div><span>Gut &lt;14.5</span></div>
+    <div class="gz"><div class="gd" style="background:#d18a1a"></div><span>SW-Abs. 14.5–16.5</span></div>
+    <div class="gz"><div class="gd" style="background:#b91c1c"></div><span>HW-Abs. &gt;16.5</span></div>
+  </div>
+</div>
+
+<!-- GRENZWERTE -->
+<div class="lbar">
+  <div class="litem"><div class="lv g">14.5</div><div class="ll">mm/s · Gut</div></div>
+  <div class="litem"><div class="lv o">16.5</div><div class="ll">mm/s · SW-Abs.</div></div>
+  <div class="litem"><div class="lv r">18.0</div><div class="ll">mm/s · HW-Abs.</div></div>
+</div>
+
+<!-- STEUERUNG -->
+<div class="ctrl">
+  <div class="drow">
+    <div class="dlbl">MESSDAUER:</div>
+    <div class="dbtns">
+      <button class="dbtn" onclick="setDur(5)">5s</button>
+      <button class="dbtn on" onclick="setDur(10)">10s</button>
+      <button class="dbtn" onclick="setDur(30)">30s</button>
+      <button class="dbtn" onclick="setDur(60)">60s</button>
+    </div>
+  </div>
+  <div class="brow">
+    <button class="btn bgrn" id="btnStart" onclick="doStart()" disabled>▶ START</button>
+    <button class="btn bred" id="btnStop"  onclick="doStop(true)"  disabled>■ STOP</button>
+    <button class="btn bblu" id="btnSnap"  onclick="doSnap()"      disabled>📌</button>
+  </div>
+  <div class="minfo" id="minfo">Sensor freigeben, dann START drücken</div>
+</div>
+
+<!-- ANLAGENDATEN -->
+<div class="acard">
+  <div class="atog" onclick="toggleInfo()">
+    <span class="albl">Anlagendaten</span>
+    <span class="asum" id="asum">Tippen zum Bearbeiten</span>
+    <span class="achev" id="achev">▼</span>
+  </div>
+  <div class="abody" id="abody">
+    <div class="agrid">
+      <div class="af full"><label>Anlagenbezeichnung</label>
+        <input type="text" id="iAnlage" value="Hiller Deca 45" oninput="updateSum()"></div>
+      <div class="af"><label>Seriennummer</label>
+        <input type="text" id="iSerial" placeholder="z.B. 12345"></div>
+      <div class="af"><label>Standort</label>
+        <input type="text" id="iOrt" placeholder="z.B. Halle 3" oninput="updateSum()"></div>
+      <div class="af"><label>Messpunkt</label>
+        <input type="text" id="iPunkt" placeholder="z.B. Lager A"></div>
+      <div class="af"><label>Bediener</label>
+        <input type="text" id="iBedi" placeholder="Name"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PDF -->
+<button class="bpdf" id="btnPdf" onclick="doPdf()" disabled>📄 MESSPROTOKOLL PDF</button>
+
+</div>
 <footer>
   Hiller GmbH · Deca-Typ OV · ∅ 450 mm · Kap. 7.1<br>
   HP 2Hz → a_rms + FFT → Veff=a_rms/(2π·f) · Kein Ersatz für ISO 10816
@@ -159,95 +274,145 @@ footer{text-align:center;padding:16px;font-size:9px;color:#7d8590;line-height:1.
 
 <script>
 // ── Konstanten ──────────────────────────────────────────────
-var G = { gut:14.5, sw:16.5, hw:18.0 };
-var GMAX = 24, CPTS = 120, FCACC = 2.0, FFTMAX = 4096;
+var G = {gut:14.5, sw:16.5, hw:18.0};
+var GMAX=24, FCACC=2.0, FFTMAX=4096;
+
+// Pufferlängen
+var ACC_PTS = 200;   // Rohbeschleunigung – viele Punkte, lebendige Kurve
+var VEFF_PTS = 200;  // Veff-Verlauf
 
 // ── State ───────────────────────────────────────────────────
-var granted = false;
-var measuring = false;
-var dur = 10;
-var tim = null;
-var hp = { x:{y:0,p:0}, y:{y:0,p:0}, z:{y:0,p:0} };
+var granted=false, measuring=false, dur=10, tim=null;
+var hp={x:{y:0,p:0},y:{y:0,p:0},z:{y:0,p:0}};
 var t0=0, tLast=null, fs=100, tLog=0;
 var a2=0, aN=0, rawX=[];
 var rFreq=0, rArms=0, rVeff=0;
-var cbuf=[], ctick=0, mlog=[], hist=[];
-for(var i=0;i<CPTS;i++) cbuf.push(0);
+var hist=[], mlog=[];
 
-// ── Canvas ──────────────────────────────────────────────────
-var cv = document.getElementById('cv');
-var cx = cv.getContext('2d');
-function resizeCv(){
-  var d=window.devicePixelRatio||1, r=cv.getBoundingClientRect();
-  cv.width=r.width*d; cv.height=r.height*d; cx.scale(d,d);
+// Achsen-Sichtbarkeit
+var showX=true, showY=true, showZ=true;
+
+// Rollende Puffer für Charts
+var bufX=[], bufY=[], bufZ=[], bufV=[];
+for(var i=0;i<ACC_PTS;i++){bufX.push(0);bufY.push(0);bufZ.push(0);}
+for(var i=0;i<VEFF_PTS;i++) bufV.push(0);
+
+// ── Canvas Setup ────────────────────────────────────────────
+var cvA=document.getElementById('cvAcc'), cxA=cvA.getContext('2d');
+var cvV=document.getElementById('cvVeff'), cxV=cvV.getContext('2d');
+
+function resizeAll(){
+  var d=window.devicePixelRatio||1;
+  var rA=cvA.getBoundingClientRect();
+  cvA.width=rA.width*d; cvA.height=rA.height*d; cxA.scale(d,d);
+  var rV=cvV.getBoundingClientRect();
+  cvV.width=rV.width*d; cvV.height=rV.height*d; cxV.scale(d,d);
 }
-window.onresize = function(){ resizeCv(); drawC(); };
-resizeCv();
+window.onresize=function(){resizeAll();drawAcc();drawVeff();};
+resizeAll();
 
-function drawC(){
-  var W=cv.getBoundingClientRect().width, H=cv.getBoundingClientRect().height;
-  cx.clearRect(0,0,W,H);
+// ── Chart 1: Rohbeschleunigung ───────────────────────────────
+// Scrollender Chart mit X/Y/Z, autoskalierend, Nulllinie
+function drawAcc(){
+  var W=cvA.getBoundingClientRect().width, H=cvA.getBoundingClientRect().height;
+  cxA.clearRect(0,0,W,H);
+  // Hintergrund
+  cxA.fillStyle='#0d1117'; cxA.fillRect(0,0,W,H);
+  // Gitternetz
+  cxA.strokeStyle='rgba(48,54,61,.5)'; cxA.lineWidth=.5;
+  for(var i=1;i<4;i++){
+    var y=H*i/4;
+    cxA.beginPath();cxA.moveTo(0,y);cxA.lineTo(W,y);cxA.stroke();
+  }
+  // Nulllinie
+  cxA.strokeStyle='rgba(125,133,144,.4)'; cxA.lineWidth=1;
+  cxA.setLineDash([3,3]);
+  cxA.beginPath();cxA.moveTo(0,H/2);cxA.lineTo(W,H/2);cxA.stroke();
+  cxA.setLineDash([]);
+  // Autoskalierung
+  var mx=0.1;
+  if(showX) for(var i=0;i<bufX.length;i++) if(Math.abs(bufX[i])>mx) mx=Math.abs(bufX[i]);
+  if(showY) for(var i=0;i<bufY.length;i++) if(Math.abs(bufY[i])>mx) mx=Math.abs(bufY[i]);
+  if(showZ) for(var i=0;i<bufZ.length;i++) if(Math.abs(bufZ[i])>mx) mx=Math.abs(bufZ[i]);
+  mx*=1.2; // etwas Rand
+  // Skala anzeigen
+  cxA.fillStyle='rgba(125,133,144,.6)'; cxA.font='9px monospace';
+  cxA.fillText('+'+mx.toFixed(2),2,10);
+  cxA.fillText('-'+mx.toFixed(2),2,H-2);
+  // Kurven zeichnen
+  function drawLine(buf, color){
+    cxA.beginPath(); cxA.strokeStyle=color; cxA.lineWidth=1.2;
+    for(var i=0;i<buf.length;i++){
+      var x=(i/(ACC_PTS-1))*W;
+      var y=H/2 - (buf[i]/mx)*(H/2);
+      if(i===0) cxA.moveTo(x,y); else cxA.lineTo(x,y);
+    }
+    cxA.stroke();
+  }
+  if(showX) drawLine(bufX,'rgba(239,68,68,.9)');
+  if(showY) drawLine(bufY,'rgba(63,185,80,.9)');
+  if(showZ) drawLine(bufZ,'rgba(88,166,255,.9)');
+}
+
+// ── Chart 2: Veff laufend ────────────────────────────────────
+function drawVeff(){
+  var W=cvV.getBoundingClientRect().width, H=cvV.getBoundingClientRect().height;
+  cxV.clearRect(0,0,W,H);
+  cxV.fillStyle='#0d1117'; cxV.fillRect(0,0,W,H);
+  // Zonen
   var z=[[0,G.gut/GMAX,'rgba(46,160,67,.08)'],[G.gut/GMAX,G.sw/GMAX,'rgba(209,138,26,.10)'],[G.sw/GMAX,1,'rgba(185,28,28,.10)']];
-  for(var i=0;i<z.length;i++){cx.fillStyle=z[i][2];cx.fillRect(0,H-z[i][1]*H,W,(z[i][1]-z[i][0])*H);}
+  for(var i=0;i<z.length;i++){cxV.fillStyle=z[i][2];cxV.fillRect(0,H-z[i][1]*H,W,(z[i][1]-z[i][0])*H);}
+  // Grenzlinien
   var l=[[G.gut,'#2ea043'],[G.sw,'#d18a1a'],[G.hw,'#b91c1c']];
   for(var i=0;i<l.length;i++){
     var y=H-(l[i][0]/GMAX)*H;
-    cx.strokeStyle=l[i][1];cx.lineWidth=.7;cx.setLineDash([3,3]);
-    cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke();cx.setLineDash([]);
+    cxV.strokeStyle=l[i][1]; cxV.lineWidth=.7; cxV.setLineDash([3,3]);
+    cxV.beginPath();cxV.moveTo(0,y);cxV.lineTo(W,y);cxV.stroke();cxV.setLineDash([]);
+    cxV.fillStyle=l[i][1]; cxV.font='9px monospace';
+    cxV.fillText(l[i][0].toFixed(1),W-22,y-1);
   }
-  var ok=false; for(var i=0;i<cbuf.length;i++) if(cbuf[i]>0){ok=true;break;}
+  // Kurve
+  var ok=false; for(var i=0;i<bufV.length;i++) if(bufV[i]>0){ok=true;break;}
   if(ok){
-    cx.beginPath();cx.strokeStyle='#58a6ff';cx.lineWidth=1.8;
-    for(var i=0;i<cbuf.length;i++){
-      var x=(i/(CPTS-1))*W, y=H-Math.min(cbuf[i]/GMAX,1)*H;
-      if(i===0) cx.moveTo(x,y); else cx.lineTo(x,y);
+    cxV.beginPath(); cxV.strokeStyle='#f0a32b'; cxV.lineWidth=1.8;
+    for(var i=0;i<bufV.length;i++){
+      var x=(i/(VEFF_PTS-1))*W, y=H-Math.min(bufV[i]/GMAX,1)*H;
+      if(i===0) cxV.moveTo(x,y); else cxV.lineTo(x,y);
     }
-    cx.stroke();
-    cx.lineTo(W,H);cx.lineTo(0,H);cx.closePath();
-    cx.fillStyle='rgba(88,166,255,.07)';cx.fill();
+    cxV.stroke();
+    cxV.lineTo(W,H);cxV.lineTo(0,H);cxV.closePath();
+    cxV.fillStyle='rgba(240,163,43,.07)';cxV.fill();
   }
 }
+drawAcc(); drawVeff();
 
-function drawCraw(){
-  var W=cv.getBoundingClientRect().width, H=cv.getBoundingClientRect().height;
-  cx.clearRect(0,0,W,H);
-  cx.fillStyle='rgba(88,166,255,.03)';cx.fillRect(0,0,W,H);
-  var ok=false,mx=10;
-  for(var i=0;i<cbuf.length;i++){if(cbuf[i]>0) ok=true; if(cbuf[i]>mx) mx=cbuf[i];}
-  if(ok){
-    cx.beginPath();cx.strokeStyle='#58a6ff';cx.lineWidth=1.8;
-    for(var i=0;i<cbuf.length;i++){
-      var x=(i/(CPTS-1))*W, y=H-Math.min(cbuf[i]/mx,1)*H;
-      if(i===0) cx.moveTo(x,y); else cx.lineTo(x,y);
-    }
-    cx.stroke();
-    cx.lineTo(W,H);cx.lineTo(0,H);cx.closePath();
-    cx.fillStyle='rgba(88,166,255,.07)';cx.fill();
-  }
-  cx.fillStyle='rgba(125,133,144,.7)';cx.font='10px monospace';cx.fillText('a_rms mm/s²',4,H-4);
-}
-drawC();
-
-// ── HP-Filter ───────────────────────────────────────────────
+// ── HP-Filter ────────────────────────────────────────────────
 function hpf(s,fc,dt,x){
   var rc=1/(2*Math.PI*fc), a=rc/(rc+dt), y=a*(s.y+x-s.p);
   s.p=x; s.y=y; return y;
 }
 
-// ── FFT ─────────────────────────────────────────────────────
+// ── FFT ──────────────────────────────────────────────────────
 function doFFT(sig){
   var N=sig.length, n=1;
   while(n*2<=N) n<<=1;
   var re=new Float64Array(n), im=new Float64Array(n);
   for(var i=0;i<n;i++){var w=.5*(1-Math.cos(2*Math.PI*i/(n-1)));re[i]=sig[i]*w;}
   var j=0;
-  for(var i=1;i<n;i++){var b=n>>1;while(j&b){j^=b;b>>=1;}j^=b;if(i<j){var t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}
+  for(var i=1;i<n;i++){
+    var b=n>>1; while(j&b){j^=b;b>>=1;} j^=b;
+    if(i<j){var t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}
+  }
   for(var len=2;len<=n;len<<=1){
-    var a=-2*Math.PI/len, wr=Math.cos(a), wi=Math.sin(a);
-    for(var i=0;i<n;i+=len){var cr=1,ci=0;
+    var ang=-2*Math.PI/len, wr=Math.cos(ang), wi=Math.sin(ang);
+    for(var i=0;i<n;i+=len){
+      var cr=1,ci=0;
       for(var k=0;k<len/2;k++){
-        var ur=re[i+k],ui=im[i+k],vr=re[i+k+len/2]*cr-im[i+k+len/2]*ci,vi=re[i+k+len/2]*ci+im[i+k+len/2]*cr;
-        re[i+k]=ur+vr;im[i+k]=ui+vi;re[i+k+len/2]=ur-vr;im[i+k+len/2]=ui-vi;
+        var ur=re[i+k],ui=im[i+k];
+        var vr=re[i+k+len/2]*cr-im[i+k+len/2]*ci;
+        var vi=re[i+k+len/2]*ci+im[i+k+len/2]*cr;
+        re[i+k]=ur+vr;im[i+k]=ui+vi;
+        re[i+k+len/2]=ur-vr;im[i+k+len/2]=ui-vi;
         var t=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=t;
       }
     }
@@ -266,12 +431,12 @@ function domF(sig,fs){
   return bi*fs/r.n;
 }
 
-// ── Permission ──────────────────────────────────────────────
+// ── Permission ────────────────────────────────────────────────
 function doPermission(){
   if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
     DeviceMotionEvent.requestPermission().then(function(r){
       if(r==='granted') onGranted();
-      else{ alert('Zugriff verweigert. Bitte in Safari-Einstellungen erlauben.'); }
+      else alert('Zugriff verweigert. Bitte in Safari-Einstellungen erlauben.');
     }).catch(function(e){ alert('Fehler: '+e.message); });
   } else {
     onGranted();
@@ -281,11 +446,13 @@ function doPermission(){
 function onGranted(){
   granted=true;
   document.getElementById('permBox').style.display='none';
+  document.getElementById('sdot').classList.add('on');
   document.getElementById('btnStart').disabled=false;
   document.getElementById('minfo').textContent='Sensor aktiv – START drücken';
 }
 
-// ── Motion ──────────────────────────────────────────────────
+// ── Motion Handler ────────────────────────────────────────────
+var tick=0;
 function onMotion(e){
   if(!measuring) return;
   var now=e.timeStamp||performance.now();
@@ -296,60 +463,90 @@ function onMotion(e){
   var dt=(now-tLast)/1000; tLast=now;
   if(dt<=0||dt>0.5) return;
   fs=fs*.95+(1/dt)*.05;
-  var axh=hpf(hp.x,FCACC,dt,ax), ayh=hpf(hp.y,FCACC,dt,ay), azh=hpf(hp.z,FCACC,dt,az);
-  var am=Math.sqrt(axh*axh+ayh*ayh+azh*azh);
-  ctick++;
-  if(ctick%10===0){
-    document.getElementById('dax').textContent=ax.toFixed(2);
-    document.getElementById('day').textContent=ay.toFixed(2);
-    document.getElementById('daz').textContent=az.toFixed(2);
-    document.getElementById('df').textContent=fs.toFixed(0);
-    document.getElementById('da').textContent=aN>0?(Math.sqrt(a2/aN)*1000).toFixed(1):'—';
-    document.getElementById('dn').textContent=String(aN);
+
+  // HP-Filter
+  var axh=hpf(hp.x,FCACC,dt,ax);
+  var ayh=hpf(hp.y,FCACC,dt,ay);
+  var azh=hpf(hp.z,FCACC,dt,az);
+
+  // Rollende Puffer für Rohbeschleunigung (ALLE Samples)
+  bufX.push(axh); if(bufX.length>ACC_PTS) bufX.shift();
+  bufY.push(ayh); if(bufY.length>ACC_PTS) bufY.shift();
+  bufZ.push(azh); if(bufZ.length>ACC_PTS) bufZ.shift();
+
+  // Stats aktualisieren (~30 Hz)
+  tick++;
+  if(tick%3===0){
+    document.getElementById('sx').textContent=axh.toFixed(2);
+    document.getElementById('sy').textContent=ayh.toFixed(2);
+    document.getElementById('sz').textContent=azh.toFixed(2);
+    drawAcc();
   }
+
+  // Einschwingen 3s
   var el=(now-t0)/1000;
-  if(el<3){document.getElementById('veffInfo').textContent='Einschwingen '+(3-el).toFixed(0)+'s';return;}
+  if(el<3){
+    document.getElementById('minfo').textContent='Einschwingen '+(3-el).toFixed(0)+'s…';
+    return;
+  }
+
+  // Akkumulieren für RMS
+  var am=Math.sqrt(axh*axh+ayh*ayh+azh*azh);
   a2+=am*am; aN++;
   if(rawX.length<FFTMAX) rawX.push(axh);
-  if(aN>=5){
+
+  // Laufender Veff (RMS-Schätzung mit fest 25 Hz bis FFT verfügbar)
+  if(aN>=10){
     var arms=Math.sqrt(a2/aN)*1000;
-    document.getElementById('veffNum').textContent=arms.toFixed(1);
-    document.getElementById('veffUnit').textContent='mm/s²';
-    document.getElementById('veffInfo').textContent='Messung '+(el-3).toFixed(0)+'s';
+    var fEst=rawX.length>=128?domF(rawX.slice(-512),fs):25;
+    var vLive=arms/(2*Math.PI*fEst);
+    // Veff-Chart
+    bufV.push(vLive); if(bufV.length>VEFF_PTS) bufV.shift();
+    // Stats
+    document.getElementById('sv').textContent=vLive.toFixed(2);
+    document.getElementById('needle').style.left=Math.min(vLive/GMAX*100,100)+'%';
+    document.getElementById('vnum').textContent=vLive.toFixed(2);
+    document.getElementById('vunit').textContent='mm/s';
+    document.getElementById('vinfo').textContent='RMS '+(el-3).toFixed(0)+'s · f='+fEst.toFixed(1)+' Hz';
+    var cls=vLive<G.gut?'gut':vLive<G.sw?'warn':'alarm';
+    document.getElementById('vcard').className='vcard '+cls;
+    document.getElementById('vnum').className='vnum'+(cls!=='gut'?' '+cls:'');
+    document.getElementById('vbadge').className='vbadge'+(cls!=='gut'?' '+cls:'');
+    document.getElementById('vbadge').textContent=cls==='gut'?'● GUT':cls==='warn'?'⚠ SW-ABSCHALTUNG':'🔴 HW-ABSCHALTUNG';
+    drawVeff();
   }
+
+  // Log ~2 Hz
   if(now-tLog>=500){
     var al=aN>0?Math.sqrt(a2/aN)*1000:0;
     mlog.push({t:parseFloat((el-3).toFixed(1)),arms:parseFloat(al.toFixed(2)),veff:0});
     tLog=now;
   }
-  if(ctick%Math.max(1,Math.round(fs/10))===0){
-    var ac=aN>0?Math.sqrt(a2/aN)*1000:0;
-    cbuf.push(ac); if(cbuf.length>CPTS) cbuf.shift();
-    drawCraw();
-    document.getElementById('cdur').textContent=(el-3).toFixed(0)+' s';
-  }
+
+  document.getElementById('cdur').textContent=(el-3).toFixed(0)+' s';
 }
 
-// ── Start ───────────────────────────────────────────────────
+// ── Start ─────────────────────────────────────────────────────
 function doStart(){
   if(!granted){alert('Sensor zuerst freigeben!');return;}
   measuring=true; tLast=null;
   hp={x:{y:0,p:0},y:{y:0,p:0},z:{y:0,p:0}};
-  a2=0;aN=0;rawX=[];rFreq=0;rArms=0;rVeff=0;
-  cbuf=[];for(var i=0;i<CPTS;i++) cbuf.push(0);
-  ctick=0;mlog=[];
-  document.getElementById('veffNum').textContent='—';
-  document.getElementById('veffUnit').textContent='mm/s²';
-  document.getElementById('veffStatus').textContent='LÄUFT';
-  document.getElementById('veffStatus').className='';
-  document.getElementById('veffBox').className='card';
+  a2=0;aN=0;rawX=[];rFreq=0;rArms=0;rVeff=0;tick=0;mlog=[];
+  bufX=[];bufY=[];bufZ=[];bufV=[];
+  for(var i=0;i<ACC_PTS;i++){bufX.push(0);bufY.push(0);bufZ.push(0);}
+  for(var i=0;i<VEFF_PTS;i++) bufV.push(0);
+  document.getElementById('vnum').textContent='—';
+  document.getElementById('vunit').textContent='mm/s';
+  document.getElementById('vbadge').textContent='LÄUFT';
+  document.getElementById('vbadge').className='vbadge';
+  document.getElementById('vcard').className='vcard gut';
   document.getElementById('needle').style.left='0%';
+  document.getElementById('sv').textContent='—';
   document.getElementById('btnStart').disabled=true;
   document.getElementById('btnStop').disabled=false;
   document.getElementById('btnSnap').disabled=false;
   window.addEventListener('devicemotion',onMotion);
   var rem=dur+3;
-  document.getElementById('minfo').textContent='Einschwingen… 3s';
   tim=setInterval(function(){
     rem--;
     if(rem>dur) document.getElementById('minfo').textContent='Einschwingen… '+(rem-dur)+'s';
@@ -358,7 +555,7 @@ function doStart(){
   },1000);
 }
 
-// ── Stop + FFT ──────────────────────────────────────────────
+// ── Stop + finale FFT ─────────────────────────────────────────
 function doStop(save){
   measuring=false; clearInterval(tim);
   window.removeEventListener('devicemotion',onMotion);
@@ -366,27 +563,33 @@ function doStop(save){
   document.getElementById('btnStart').disabled=false;
   document.getElementById('btnStop').disabled=true;
   document.getElementById('btnSnap').disabled=true;
-  if(aN<10||rawX.length<64){document.getElementById('minfo').textContent='Zu wenig Daten – erneut messen';return;}
+  if(aN<10||rawX.length<64){
+    document.getElementById('minfo').textContent='Zu wenig Daten – erneut messen'; return;
+  }
+  // Finale FFT
   rFreq=domF(rawX,fs);
   rArms=Math.sqrt(a2/aN)*1000;
   var om=2*Math.PI*rFreq;
   rVeff=rArms/om;
+  // Log Veff berechnen
   for(var i=0;i<mlog.length;i++) mlog[i].veff=parseFloat((mlog[i].arms/om).toFixed(2));
-  document.getElementById('veffNum').textContent=rVeff.toFixed(2);
-  document.getElementById('veffUnit').textContent='mm/s';
-  document.getElementById('veffInfo').textContent='f='+rFreq.toFixed(1)+' Hz · a='+rArms.toFixed(0)+' mm/s²';
+  // Anzeige
+  document.getElementById('vnum').textContent=rVeff.toFixed(2);
+  document.getElementById('vunit').textContent='mm/s';
+  document.getElementById('sv').textContent=rVeff.toFixed(2);
+  document.getElementById('vinfo').textContent='f='+rFreq.toFixed(1)+' Hz · a='+rArms.toFixed(0)+' mm/s²';
   document.getElementById('needle').style.left=Math.min(rVeff/GMAX*100,100)+'%';
   var cls=rVeff<G.gut?'gut':rVeff<G.sw?'warn':'alarm';
-  document.getElementById('veffBox').className='card '+cls;
-  document.getElementById('veffNum').className=cls==='gut'?'':cls;
-  document.getElementById('veffStatus').textContent=cls==='gut'?'● GUT':cls==='warn'?'⚠ SW-ABSCHALTUNG':'🔴 HW-ABSCHALTUNG';
-  document.getElementById('veffStatus').className=cls==='gut'?'':cls;
-  document.getElementById('minfo').textContent='Veff='+rVeff.toFixed(2)+' mm/s · f='+rFreq.toFixed(1)+' Hz';
-  cbuf=[];
-  for(var i=0;i<mlog.length;i++) cbuf.push(mlog[i].veff);
-  while(cbuf.length<CPTS) cbuf.unshift(0);
-  if(cbuf.length>CPTS) cbuf=cbuf.slice(cbuf.length-CPTS);
-  drawC();
+  document.getElementById('vcard').className='vcard '+cls;
+  document.getElementById('vnum').className='vnum'+(cls!=='gut'?' '+cls:'');
+  document.getElementById('vbadge').className='vbadge'+(cls!=='gut'?' '+cls:'');
+  document.getElementById('vbadge').textContent=cls==='gut'?'● GUT':cls==='warn'?'⚠ SW-ABSCHALTUNG':'🔴 HW-ABSCHALTUNG';
+  document.getElementById('minfo').textContent='Veff='+rVeff.toFixed(2)+' mm/s · f='+rFreq.toFixed(1)+' Hz · a='+rArms.toFixed(0)+' mm/s²';
+  // Veff-Chart finalisieren
+  bufV=[]; for(var i=0;i<mlog.length;i++) bufV.push(mlog[i].veff);
+  while(bufV.length<VEFF_PTS) bufV.unshift(0);
+  if(bufV.length>VEFF_PTS) bufV=bufV.slice(bufV.length-VEFF_PTS);
+  drawVeff();
   if(save&&rVeff>0){
     var now=new Date();
     hist.unshift({v:rVeff,freq:rFreq,arms:rArms,dur:dur,log:mlog.slice(),
@@ -394,7 +597,6 @@ function doStop(save){
       date:now.toLocaleDateString('de-DE')});
     if(hist.length>30) hist.pop();
     document.getElementById('btnPdf').disabled=false;
-    showMsg('Veff: '+rVeff.toFixed(2)+' mm/s gespeichert');
   }
 }
 
@@ -407,7 +609,7 @@ function doSnap(){
       date:now.toLocaleDateString('de-DE')});
     if(hist.length>30) hist.pop();
     document.getElementById('btnPdf').disabled=false;
-    showMsg('📌 '+v.toFixed(2)+' mm/s');
+    document.getElementById('minfo').textContent='📌 '+v.toFixed(2)+' mm/s gespeichert';
   }
 }
 
@@ -418,83 +620,85 @@ function setDur(s){
   });
 }
 
-function showMsg(m){
-  document.getElementById('minfo').textContent=m;
+function toggleAxis(ax){
+  if(ax==='x'){showX=!showX;document.getElementById('axX').className='abtn x'+(showX?' on':'');}
+  else if(ax==='y'){showY=!showY;document.getElementById('axY').className='abtn y'+(showY?' on':'');}
+  else{showZ=!showZ;document.getElementById('axZ').className='abtn z'+(showZ?' on':'');}
+  drawAcc();
 }
 
-// ── PDF (Browser Print) ─────────────────────────────────────
-function doPdf(){
-  if(!hist.length){alert('Keine Messdaten vorhanden');return;}
-  var h=hist[0];
-  var cls=h.v<G.gut?'gut':h.v<G.sw?'warn':'alarm';
-  var farbe=cls==='gut'?'#2ea043':cls==='warn'?'#d18a1a':'#b91c1c';
-  var bew=cls==='gut'?'GUT':cls==='warn'?'SW-ABSCHALTUNG':'HW-ABSCHALTUNG';
-  var anlage=document.getElementById('iAnlage')?document.getElementById('iAnlage').value:'Hiller Deca 45';
-  var serial=document.getElementById('iSerial')?document.getElementById('iSerial').value:'—';
-  var ort=document.getElementById('iOrt')?document.getElementById('iOrt').value:'—';
-  var bedi=document.getElementById('iBedi')?document.getElementById('iBedi').value:'—';
+function toggleInfo(){
+  var b=document.getElementById('abody'), c=document.getElementById('achev');
+  var o=b.classList.toggle('open'); c.classList.toggle('open',o);
+}
+function updateSum(){
+  var a=document.getElementById('iAnlage').value||'—';
+  var o=document.getElementById('iOrt').value;
+  var s=document.getElementById('iSerial').value;
+  var sum=a; if(o) sum+=' · '+o; if(s) sum+=' · #'+s;
+  document.getElementById('asum').textContent=sum;
+}
 
+// ── PDF ───────────────────────────────────────────────────────
+function doPdf(){
+  if(!hist.length){alert('Keine Messdaten');return;}
+  var anlage=document.getElementById('iAnlage').value||'Hiller Deca 45';
+  var serial=document.getElementById('iSerial').value||'—';
+  var ort=document.getElementById('iOrt').value||'—';
+  var bedi=document.getElementById('iBedi').value||'—';
   var rows='';
   for(var i=hist.length-1;i>=0;i--){
-    var e=hist[i], ec=e.v<G.gut?'gut':e.v<G.sw?'warn':'alarm';
-    var ef=ec==='gut'?'#2ea043':ec==='warn'?'#d18a1a':'#b91c1c';
-    var eb=ec==='gut'?'GUT':ec==='warn'?'SW-ABSCHALTUNG':'HW-ABSCHALTUNG';
+    var e=hist[i], cls=e.v<G.gut?'gut':e.v<G.sw?'warn':'alarm';
+    var fc=cls==='gut'?'#2ea043':cls==='warn'?'#d18a1a':'#b91c1c';
+    var bw=cls==='gut'?'GUT':cls==='warn'?'SW-ABSCHALTUNG':'HW-ABSCHALTUNG';
     rows+='<tr><td>'+(hist.length-i)+'</td><td>'+e.date+'</td><td>'+e.time+'</td>'
       +'<td><b>'+e.v.toFixed(2)+'</b></td><td>'+e.freq.toFixed(1)+'</td>'
       +'<td>'+e.arms.toFixed(0)+'</td><td>'+e.dur+'</td>'
-      +'<td><span style="background:'+ef+';color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">'+eb+'</span></td></tr>';
+      +'<td><span style="background:'+fc+';color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">'+bw+'</span></td></tr>';
   }
-
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8">'
-    +'<title>Messprotokoll Deca 45</title>'
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Messprotokoll</title>'
     +'<style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px;color:#333;}'
-    +'h1{font-size:20px;margin:0;}h2{font-size:13px;color:#666;font-weight:normal;margin:2px 0 12px;}'
-    +'.hdr{background:#0d1117;color:#fff;padding:12px 16px;border-radius:6px;margin-bottom:16px;}'
-    +'.info{background:#f5f5f5;padding:10px 14px;border-radius:6px;margin-bottom:12px;'
-    +'display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;font-size:11px;}'
-    +'.info b{display:inline;color:#333;}.info span{color:#666;}'
-    +'.lbar{display:flex;gap:8px;margin-bottom:12px;}'
-    +'.lbox{flex:1;padding:8px;border-radius:6px;color:#fff;text-align:center;font-size:12px;font-weight:bold;}'
+    +'h1{font-size:20px;margin:0;}p{margin:2px 0;font-size:11px;color:#666;}'
+    +'.hdr{background:#0d1117;color:#fff;padding:12px 16px;border-radius:6px;margin-bottom:14px;}'
+    +'.info{background:#f5f5f5;padding:10px 14px;border-radius:6px;margin-bottom:10px;'
+    +'display:grid;grid-template-columns:1fr 1fr;gap:3px 20px;font-size:11px;}'
+    +'.lbar{display:flex;gap:8px;margin-bottom:10px;}'
+    +'.lbox{flex:1;padding:7px;border-radius:5px;color:#fff;text-align:center;font-size:11px;font-weight:bold;}'
     +'table{width:100%;border-collapse:collapse;font-size:11px;}'
-    +'th{background:#e8e8e8;padding:5px 8px;text-align:left;border-bottom:2px solid #ccc;}'
-    +'td{padding:5px 8px;border-bottom:1px solid #eee;}'
-    +'tr:nth-child(even){background:#fafafa;}'
-    +'.foot{margin-top:16px;font-size:9px;color:#999;border-top:1px solid #eee;padding-top:8px;}'
+    +'th{background:#e8e8e8;padding:5px 7px;text-align:left;border-bottom:2px solid #ccc;}'
+    +'td{padding:5px 7px;border-bottom:1px solid #eee;}'
+    +'.foot{margin-top:14px;font-size:9px;color:#999;border-top:1px solid #eee;padding-top:8px;line-height:1.6;}'
     +'@media print{body{margin:10px;}}</style></head><body>'
-    +'<div class="hdr"><h1>HILLER DECA 45</h1><h2>Vibrations-Messprotokoll · Trommel-Innendurchmesser 450 mm · Deca-Typ OV</h2></div>'
+    +'<div class="hdr"><h1>HILLER DECA 45 – Messprotokoll</h1>'
+    +'<p style="color:#aaa;margin-top:3px;">Trommel-Innendurchmesser 450 mm · Deca-Typ OV</p></div>'
     +'<div class="info">'
-    +'<div><span>Anlage: </span><b>'+anlage+'</b></div>'
-    +'<div><span>Seriennummer: </span><b>'+serial+'</b></div>'
-    +'<div><span>Standort: </span><b>'+ort+'</b></div>'
-    +'<div><span>Bediener: </span><b>'+bedi+'</b></div>'
-    +'<div><span>Datum/Uhrzeit: </span><b>'+new Date().toLocaleString('de-DE')+'</b></div>'
+    +'<div>Anlage: <b>'+anlage+'</b></div><div>Seriennummer: <b>'+serial+'</b></div>'
+    +'<div>Standort: <b>'+ort+'</b></div><div>Bediener: <b>'+bedi+'</b></div>'
+    +'<div>Erstellt: <b>'+new Date().toLocaleString('de-DE')+'</b></div>'
     +'</div>'
     +'<div class="lbar">'
-    +'<div class="lbox" style="background:#2ea043">Gut<br><small>0 – 14.5 mm/s</small></div>'
-    +'<div class="lbox" style="background:#d18a1a">SW-Abschaltung<br><small>14.5 – 16.5 mm/s</small></div>'
-    +'<div class="lbox" style="background:#b91c1c">HW-Abschaltung<br><small>&gt; 16.5 mm/s</small></div>'
+    +'<div class="lbox" style="background:#2ea043">Gut · 0–14.5 mm/s</div>'
+    +'<div class="lbox" style="background:#d18a1a">SW-Abschaltung · 14.5–16.5 mm/s</div>'
+    +'<div class="lbox" style="background:#b91c1c">HW-Abschaltung · &gt;16.5 mm/s</div>'
     +'</div>'
     +'<table><tr><th>Nr.</th><th>Datum</th><th>Uhrzeit</th><th>Veff [mm/s]</th>'
     +'<th>f [Hz]</th><th>a_rms [mm/s²]</th><th>Dauer [s]</th><th>Bewertung</th></tr>'
     +rows+'</table>'
     +'<div class="foot">'
-    +'Signalpfad: e.acceleration → HP-Filter 2 Hz → a_rms + FFT → Veff = a_rms/(2π·f)<br>'
-    +'Grenzwerte: Hiller GmbH Betriebsanleitung Kap. 7.1, ∅ 450 mm (Typen 35, 37, 45)<br>'
+    +'Signalpfad: e.acceleration → HP-Filter 2 Hz → a_rms + FFT (Hanning) → Veff = a_rms / (2π·f)<br>'
+    +'Grenzwerte: Hiller GmbH Betriebsanleitung Kap. 7.1, Trommel-Innendurchmesser 450 mm (Typen 35, 37, 45)<br>'
     +'HINWEIS: Diese Messung ersetzt keine kalibrierte Schwingungsmessung nach ISO 10816 / VDI 2056.'
     +'</div></body></html>';
-
   var w=window.open('','_blank');
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(function(){ w.print(); }, 500);
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(function(){w.print();},500);
 }
 
-// ── Init ─────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────
 if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission!=='function'){
   onGranted();
 }
-drawC();
+drawAcc(); drawVeff();
 </script>
 </body>
 </html>
