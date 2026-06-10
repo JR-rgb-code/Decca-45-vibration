@@ -245,6 +245,23 @@ footer{text-align:center;padding:16px;font-size:9px;color:#7d8590;line-height:1.
       <button class="dbtn" onclick="setDur(60)">60s</button>
     </div>
   </div>
+  <!-- DREHZAHL -->
+  <div class="drow">
+    <div class="dlbl">DREHZAHL:</div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <input type="number" id="rpmInput" value="3200" min="100" max="10000" step="100"
+        style="width:80px;background:#0d1117;border:1px solid #30363d;border-radius:5px;
+        padding:5px 8px;color:#e6edf3;font-family:monospace;font-size:13px;outline:none;text-align:right;"
+        oninput="updateRpm()">
+      <span style="font-size:11px;color:#7d8590;font-family:monospace;">U/min</span>
+      <span style="font-size:11px;color:#3fb950;font-family:monospace;" id="rpmHz">= 53.3 Hz</span>
+    </div>
+  </div>
+  <div style="font-size:10px;color:#7d8590;font-family:monospace;margin-bottom:6px;padding:4px 2px;
+    background:rgba(31,111,235,.08);border-radius:5px;padding:5px 8px;">
+    ⚠ iPhone-Sensor max. ~100 Hz Abtastrate → Nyquist-Grenze 50 Hz<br>
+    <span id="rpmWarning" style="color:#f0a32b;">Bei 3200 U/min = 53.3 Hz → Aliasing möglich – Drehzahl bekannt eingeben</span>
+  </div>
   <div class="brow">
     <button class="btn bgrn" id="btnStart" onclick="doStart()" disabled>▶ START</button>
     <button class="btn bred" id="btnStop"  onclick="doStop(true)"  disabled>■ STOP</button>
@@ -285,7 +302,7 @@ footer{text-align:center;padding:16px;font-size:9px;color:#7d8590;line-height:1.
 </div>
 <footer>
   Hiller GmbH · Deca-Typ OV · ∅ 450 mm · Kap. 7.1<br>
-  HP 2Hz → Z-Achse (vertikal) → a_rms(Z) + FFT(Z) → Veff=a_rms/(2π·f) · Kein Ersatz für ISO 10816
+  HP 2Hz → Z-Achse → a_rms(Z) · Veff = a_rms/(2π·f) · f aus Drehzahl-Eingabe · FFT nur zur Spektralkontrolle
 </footer>
 
 <script>
@@ -474,7 +491,25 @@ function onGranted(){
   document.getElementById('minfo').textContent='Sensor aktiv – START drücken';
 }
 
-// ── Motion Handler ────────────────────────────────────────────
+// ── Drehzahl ─────────────────────────────────────────────────
+var rpm = 3200;
+var rpmFreq = 3200/60;  // Hz
+
+function updateRpm(){
+  var v = parseFloat(document.getElementById('rpmInput').value)||3200;
+  rpm = v;
+  rpmFreq = v/60;
+  var hz = rpmFreq.toFixed(1);
+  document.getElementById('rpmHz').textContent = '= '+hz+' Hz';
+  var warn = document.getElementById('rpmWarning');
+  if(rpmFreq > 50){
+    warn.style.color = '#f0a32b';
+    warn.textContent = 'Bei '+v+' U/min = '+hz+' Hz → über Nyquist-Grenze – Drehzahl direkt eingegeben ✓';
+  } else {
+    warn.style.color = '#3fb950';
+    warn.textContent = 'Bei '+v+' U/min = '+hz+' Hz → unter Nyquist-Grenze – FFT zusätzlich verfügbar ✓';
+  }
+}
 var tick=0;
 function onMotion(e){
   if(!measuring) return;
@@ -519,19 +554,24 @@ function onMotion(e){
   a2+=azh*azh; aN++;
   if(rawZ.length<FFTMAX) rawZ.push(azh);
 
-  // Laufender Veff (FFT alle 128 neue Samples)
+  // Laufender Veff – Drehzahl direkt eingegeben, keine FFT nötig
   if(aN>=10){
-    var arms=Math.sqrt(a2/aN)*1000;
-    var fRes=rawZ.length>=128?domF(rawZ.slice(-512),fs):{f:25,purity:0};
-    var fEst=fRes.f, purity=fRes.purity;
-    var vLive=arms/(2*Math.PI*fEst);
-    // Spektralreinheit anzeigen
+    var arms=Math.sqrt(a2/aN)*1000;          // mm/s²
+    var fUsed=rpmFreq;                        // Hz – aus Drehzahl-Eingabe
+    var om=2*Math.PI*fUsed;                   // rad/s
+    var vLive=arms/om;                        // mm/s
+    // Spektralreinheit zur Kontrolle (optional, nur wenn genug Daten)
     if(rawZ.length>=128){
+      var fRes=domF(rawZ.slice(-512),fs);
+      var purity=fRes.purity;
+      var fFFT=fRes.f;
       var pPct=Math.round(purity*100);
       var pColor=purity>0.7?'#3fb950':purity>0.3?'#f0a32b':'#ef4444';
-      var pMsg=purity>0.7?'✓ Dominante Frequenz – Veff zuverlässig'
-              :purity>0.3?'⚠ Gemischtes Spektrum – Veff eingeschränkt zuverlässig'
-              :'✗ Breitbandrauschen – Veff unsicher';
+      var pMsg=purity>0.7
+        ?'✓ Dominante Frequenz bei '+fFFT.toFixed(1)+' Hz (FFT-Kontrolle)'
+        :purity>0.3
+        ?'⚠ Gemischtes Spektrum – FFT: '+fFFT.toFixed(1)+' Hz'
+        :'✗ Breitbandrauschen – FFT: '+fFFT.toFixed(1)+' Hz';
       document.getElementById('purityBox').style.display='block';
       document.getElementById('purityVal').textContent=pPct+'%';
       document.getElementById('purityVal').style.color=pColor;
@@ -547,7 +587,7 @@ function onMotion(e){
     document.getElementById('needle').style.left=Math.min(vLive/GMAX*100,100)+'%';
     document.getElementById('vnum').textContent=vLive.toFixed(2);
     document.getElementById('vunit').textContent='mm/s';
-    document.getElementById('vinfo').textContent='RMS '+(el-3).toFixed(0)+'s · f='+fEst.toFixed(1)+' Hz';
+    document.getElementById('vinfo').textContent='f='+fUsed.toFixed(1)+' Hz ('+rpm+' U/min) · RMS '+(el-3).toFixed(0)+'s';
     var cls=vLive<G.gut?'gut':vLive<G.sw?'warn':'alarm';
     document.getElementById('vcard').className='vcard '+cls;
     document.getElementById('vnum').className='vnum'+(cls!=='gut'?' '+cls:'');
@@ -607,19 +647,23 @@ function doStop(save){
   if(aN<10||rawZ.length<64){
     document.getElementById('minfo').textContent='Zu wenig Daten – erneut messen'; return;
   }
-  // Finale FFT
+  // Finale Berechnung – Drehzahl aus Eingabe
+  rFreq=rpmFreq;                          // Hz aus Drehzahl-Eingabe
+  rArms=Math.sqrt(a2/aN)*1000;            // mm/s²
+  var om=2*Math.PI*rFreq;                 // rad/s
+  rVeff=rArms/om;                         // mm/s
+  // FFT nur zur Kontrolle der Spektralreinheit
   var fRes=domF(rawZ,fs);
-  rFreq=fRes.f;
   var finalPurity=fRes.purity;
-  rArms=Math.sqrt(a2/aN)*1000;
-  var om=2*Math.PI*rFreq;
-  rVeff=rArms/om;
+  var fFFT=fRes.f;
   // Spektralreinheit finalisieren
   var pPct=Math.round(finalPurity*100);
   var pColor=finalPurity>0.7?'#3fb950':finalPurity>0.3?'#f0a32b':'#ef4444';
-  var pMsg=finalPurity>0.7?'✓ Dominante Frequenz – Veff zuverlässig'
-          :finalPurity>0.3?'⚠ Gemischtes Spektrum – Veff eingeschränkt zuverlässig'
-          :'✗ Breitbandrauschen – Veff unsicher';
+  var pMsg=finalPurity>0.7
+    ?'✓ Dominante Frequenz bei '+fFFT.toFixed(1)+' Hz (FFT-Kontrolle, Veff aus '+rpm+' U/min)'
+    :finalPurity>0.3
+    ?'⚠ Gemischtes Spektrum – FFT: '+fFFT.toFixed(1)+' Hz'
+    :'✗ Breitbandrauschen – FFT: '+fFFT.toFixed(1)+' Hz';
   document.getElementById('purityBox').style.display='block';
   document.getElementById('purityVal').textContent=pPct+'%';
   document.getElementById('purityVal').style.color=pColor;
@@ -633,14 +677,14 @@ function doStop(save){
   document.getElementById('vnum').textContent=rVeff.toFixed(2);
   document.getElementById('vunit').textContent='mm/s';
   document.getElementById('sv').textContent=rVeff.toFixed(2);
-  document.getElementById('vinfo').textContent='f='+rFreq.toFixed(1)+' Hz · a='+rArms.toFixed(0)+' mm/s²';
+  document.getElementById('vinfo').textContent='f='+rFreq.toFixed(1)+' Hz ('+rpm+' U/min) · a='+rArms.toFixed(0)+' mm/s²';
   document.getElementById('needle').style.left=Math.min(rVeff/GMAX*100,100)+'%';
   var cls=rVeff<G.gut?'gut':rVeff<G.sw?'warn':'alarm';
   document.getElementById('vcard').className='vcard '+cls;
   document.getElementById('vnum').className='vnum'+(cls!=='gut'?' '+cls:'');
   document.getElementById('vbadge').className='vbadge'+(cls!=='gut'?' '+cls:'');
   document.getElementById('vbadge').textContent=cls==='gut'?'● GUT':cls==='warn'?'⚠ SW-ABSCHALTUNG':'🔴 HW-ABSCHALTUNG';
-  document.getElementById('minfo').textContent='Veff='+rVeff.toFixed(2)+' mm/s · f='+rFreq.toFixed(1)+' Hz · a='+rArms.toFixed(0)+' mm/s²';
+  document.getElementById('minfo').textContent='Veff='+rVeff.toFixed(2)+' mm/s · '+rpm+' U/min · a='+rArms.toFixed(0)+' mm/s²';
   // Veff-Chart finalisieren
   bufV=[]; for(var i=0;i<mlog.length;i++) bufV.push(mlog[i].veff);
   while(bufV.length<VEFF_PTS) bufV.unshift(0);
@@ -648,7 +692,7 @@ function doStop(save){
   drawVeff();
   if(save&&rVeff>0){
     var now=new Date();
-    hist.unshift({v:rVeff,freq:rFreq,arms:rArms,dur:dur,log:mlog.slice(),
+    hist.unshift({v:rVeff,freq:rFreq,rpm:rpm,arms:rArms,dur:dur,log:mlog.slice(),
       time:now.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
       date:now.toLocaleDateString('de-DE')});
     if(hist.length>30) hist.pop();
@@ -708,7 +752,7 @@ function doPdf(){
     var fc=cls==='gut'?'#2ea043':cls==='warn'?'#d18a1a':'#b91c1c';
     var bw=cls==='gut'?'GUT':cls==='warn'?'SW-ABSCHALTUNG':'HW-ABSCHALTUNG';
     rows+='<tr><td>'+(hist.length-i)+'</td><td>'+e.date+'</td><td>'+e.time+'</td>'
-      +'<td><b>'+e.v.toFixed(2)+'</b></td><td>'+e.freq.toFixed(1)+'</td>'
+      +'<td><b>'+e.v.toFixed(2)+'</b></td><td>'+(e.rpm||'—')+'</td><td>'+e.freq.toFixed(1)+'</td>'
       +'<td>'+e.arms.toFixed(0)+'</td><td>'+e.dur+'</td>'
       +'<td><span style="background:'+fc+';color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">'+bw+'</span></td></tr>';
   }
@@ -738,7 +782,7 @@ function doPdf(){
     +'<div class="lbox" style="background:#b91c1c">HW-Abschaltung · &gt;16.5 mm/s</div>'
     +'</div>'
     +'<table><tr><th>Nr.</th><th>Datum</th><th>Uhrzeit</th><th>Veff [mm/s]</th>'
-    +'<th>f [Hz]</th><th>a_rms [mm/s²]</th><th>Dauer [s]</th><th>Bewertung</th></tr>'
+    +'<th>U/min</th><th>f [Hz]</th><th>a_rms [mm/s²]</th><th>Dauer [s]</th><th>Bewertung</th></tr>'
     +rows+'</table>'
     +'<div class="foot">'
     +'Signalpfad: e.acceleration → HP-Filter 2 Hz → Z-Achse (vertikal) → a_rms(Z) + FFT(Z) → Veff = a_rms / (2π·f)<br>'
