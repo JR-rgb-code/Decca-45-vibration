@@ -251,6 +251,9 @@ footer{text-align:center;padding:16px;font-size:9px;color:#7d8590;line-height:1.
     <button class="btn bblu" id="btnSnap"  onclick="doSnap()"      disabled>📌</button>
   </div>
   <div class="minfo" id="minfo">Sensor freigeben, dann START drücken</div>
+  <div style="font-size:10px;color:#1f6feb;font-family:monospace;text-align:center;margin-top:4px;">
+    📱 iPhone flach auflegen · Display nach oben · Z-Achse = vertikal
+  </div>
 </div>
 
 <!-- ANLAGENDATEN -->
@@ -282,7 +285,7 @@ footer{text-align:center;padding:16px;font-size:9px;color:#7d8590;line-height:1.
 </div>
 <footer>
   Hiller GmbH · Deca-Typ OV · ∅ 450 mm · Kap. 7.1<br>
-  HP 2Hz → |a| = √(ax²+ay²+az²) → a_rms + FFT(|a|) → Veff=a_rms/(2π·f) · Kein Ersatz für ISO 10816
+  HP 2Hz → Z-Achse (vertikal) → a_rms(Z) + FFT(Z) → Veff=a_rms/(2π·f) · Kein Ersatz für ISO 10816
 </footer>
 
 <script>
@@ -298,7 +301,7 @@ var VEFF_PTS = 200;  // Veff-Verlauf
 var granted=false, measuring=false, dur=10, tim=null;
 var hp={x:{y:0,p:0},y:{y:0,p:0},z:{y:0,p:0}};
 var t0=0, tLast=null, fs=100, tLog=0;
-var a2=0, aN=0, rawMag=[];  // rawMag: Betragssignal |a| [m/s²] für FFT – konsistent mit RMS
+var a2=0, aN=0, rawZ=[];   // rawZ: Z-Achse [m/s²] – vertikal, identisch mit Zentrifugen-Sensor
 var rFreq=0, rArms=0, rVeff=0;
 var hist=[], mlog=[];
 
@@ -511,18 +514,19 @@ function onMotion(e){
   }
 
   // Akkumulieren für RMS
-  var am=Math.sqrt(axh*axh+ayh*ayh+azh*azh);
-  a2+=am*am; aN++;
-  if(rawMag.length<FFTMAX) rawMag.push(am);  // Betrag für FFT
+  // Nur Z-Achse (vertikal) – identisch mit Zentrifugen-Sensor
+  // iPhone flach auflegen: Display nach oben, dann ist Z = vertikal
+  a2+=azh*azh; aN++;
+  if(rawZ.length<FFTMAX) rawZ.push(azh);
 
   // Laufender Veff (FFT alle 128 neue Samples)
   if(aN>=10){
     var arms=Math.sqrt(a2/aN)*1000;
-    var fRes=rawMag.length>=128?domF(rawMag.slice(-512),fs):{f:25,purity:0};
+    var fRes=rawZ.length>=128?domF(rawZ.slice(-512),fs):{f:25,purity:0};
     var fEst=fRes.f, purity=fRes.purity;
     var vLive=arms/(2*Math.PI*fEst);
     // Spektralreinheit anzeigen
-    if(rawMag.length>=128){
+    if(rawZ.length>=128){
       var pPct=Math.round(purity*100);
       var pColor=purity>0.7?'#3fb950':purity>0.3?'#f0a32b':'#ef4444';
       var pMsg=purity>0.7?'✓ Dominante Frequenz – Veff zuverlässig'
@@ -567,7 +571,7 @@ function doStart(){
   if(!granted){alert('Sensor zuerst freigeben!');return;}
   measuring=true; tLast=null;
   hp={x:{y:0,p:0},y:{y:0,p:0},z:{y:0,p:0}};
-  a2=0;aN=0;rawMag=[];rFreq=0;rArms=0;rVeff=0;tick=0;mlog=[];
+  a2=0;aN=0;rawZ=[];rFreq=0;rArms=0;rVeff=0;tick=0;mlog=[];
   bufX=[];bufY=[];bufZ=[];bufV=[];
   for(var i=0;i<ACC_PTS;i++){bufX.push(0);bufY.push(0);bufZ.push(0);}
   for(var i=0;i<VEFF_PTS;i++) bufV.push(0);
@@ -600,11 +604,11 @@ function doStop(save){
   document.getElementById('btnStart').disabled=false;
   document.getElementById('btnStop').disabled=true;
   document.getElementById('btnSnap').disabled=true;
-  if(aN<10||rawMag.length<64){
+  if(aN<10||rawZ.length<64){
     document.getElementById('minfo').textContent='Zu wenig Daten – erneut messen'; return;
   }
   // Finale FFT
-  var fRes=domF(rawMag,fs);
+  var fRes=domF(rawZ,fs);
   rFreq=fRes.f;
   var finalPurity=fRes.purity;
   rArms=Math.sqrt(a2/aN)*1000;
@@ -654,7 +658,7 @@ function doStop(save){
 
 function doSnap(){
   if(aN>5){
-    var arms=Math.sqrt(a2/aN)*1000, fRes=domF(rawMag,fs), f=fRes.f, v=arms/(2*Math.PI*f);
+    var arms=Math.sqrt(a2/aN)*1000, fRes=domF(rawZ,fs), f=fRes.f, v=arms/(2*Math.PI*f);
     var now=new Date();
     hist.unshift({v:v,freq:f,arms:arms,dur:dur,log:mlog.slice(),
       time:now.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
@@ -737,7 +741,7 @@ function doPdf(){
     +'<th>f [Hz]</th><th>a_rms [mm/s²]</th><th>Dauer [s]</th><th>Bewertung</th></tr>'
     +rows+'</table>'
     +'<div class="foot">'
-    +'Signalpfad: e.acceleration → HP-Filter 2 Hz → a_rms + FFT (Hanning) → Veff = a_rms / (2π·f)<br>'
+    +'Signalpfad: e.acceleration → HP-Filter 2 Hz → Z-Achse (vertikal) → a_rms(Z) + FFT(Z) → Veff = a_rms / (2π·f)<br>'
     +'Grenzwerte: Hiller GmbH Betriebsanleitung Kap. 7.1, Trommel-Innendurchmesser 450 mm (Typen 35, 37, 45)<br>'
     +'HINWEIS: Diese Messung ersetzt keine kalibrierte Schwingungsmessung nach ISO 10816 / VDI 2056.'
     +'</div></body></html>';
